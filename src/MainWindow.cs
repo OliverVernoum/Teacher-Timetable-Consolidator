@@ -1,177 +1,607 @@
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 
 namespace TimetableChecker;
 
+/// <summary>
+/// The main window: a sidebar on the left and one of three pages on the right.
+///
+///   Who's free      – pick a day and a period on the "day ribbon" to see who is free
+///   Timetables      – one teacher's week; add, rename, edit and remove teachers
+///   Calendar export – save .ics files for Apple Calendar / Outlook / Google Calendar
+///
+/// How it fits together: the window keeps a few pieces of STATE (which day, period and teacher
+/// are selected). When something changes, the Refresh...() methods rebuild the controls on screen
+/// from that state. The look of everything (colours, sizes) is in App.axaml – here we only
+/// give controls style "classes", like class="..." in HTML.
+/// </summary>
 public class MainWindow : Window
 {
-    private School _school = new();
+    // ======================= State =======================
 
-    private readonly TextBlock _folderLabel = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly ComboBox _dayBox = new() { MinWidth = 140 };
-    private readonly ComboBox _periodBox = new() { MinWidth = 200 };
-    private readonly TextBlock _freeHeading = new() { FontWeight = FontWeight.SemiBold, FontSize = 16 };
-    private readonly ListBox _freeList = new() { MinHeight = 120 };
-    private readonly ListBox _busyList = new() { MinHeight = 80 };
-    private readonly ComboBox _teacherBox = new() { MinWidth = 200 };
-    private readonly Grid _timetableGrid = new();
-    private readonly CalendarDatePicker _startDate = new() { Width = 170, SelectedDate = NextMonday(DateTime.Today) };
-    private readonly NumericUpDown _weeks = new() { Value = 13, Minimum = 1, Maximum = 52, Increment = 1, FormatString = "0", Width = 130 };
-    private readonly CheckBox _includeFree = new() { Content = "Free periods", IsChecked = true };
-    private readonly CheckBox _includeLessons = new() { Content = "Lessons", IsChecked = true };
-    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.8 };
-
-    // Editing a timetable
-    private bool _editing;
+    private School _school = new();     // every teacher's timetable (see School.cs)
+    private string? _day;               // the day picked on the Who's free page
+    private Period? _period;            // the period picked on the Who's free page
+    private BreakSlot? _breakNow;       // set when "Right now" lands in a break or lunch
+    private Teacher? _teacher;          // the teacher shown on the Timetables page
+    private bool _editing;              // is that teacher's timetable being edited?
     private readonly Dictionary<(string Day, string Period), TextBox> _lessonEditors = new();
+
+    // ======================= Controls =======================
+
+    // The sidebar and the area the current page is shown in
+    private readonly ContentControl _pageHost = new();
+    private readonly Dictionary<string, Button> _navButtons = new();
+    private readonly Dictionary<string, Control> _pages = new();
+    private readonly TextBlock _folderName = new() { Classes = { "muted", "small" }, TextWrapping = TextWrapping.Wrap };
+    private readonly Border _statusBar = new() { Classes = { "statusbar" }, IsVisible = false };
+    private readonly TextBlock _status = new() { Classes = { "muted", "small" }, TextWrapping = TextWrapping.Wrap };
+
+    // Who's free page
+    private readonly StackPanel _dayButtons = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    private readonly Grid _ribbon = new() { Height = 58 };
+    private readonly TextBlock _answer = new() { Classes = { "h2" }, TextWrapping = TextWrapping.Wrap };
+    private readonly WrapPanel _freeBadges = new();
+    private readonly TextBlock _teachingHeading = new() { Classes = { "h3" }, Margin = new Thickness(0, 12, 0, 0) };
+    private readonly Grid _teachingTable = new() { ColumnDefinitions = new ColumnDefinitions("Auto,24,*") };
+
+    // Timetables page
+    private readonly TextBox _search = new() { Watermark = "Find a teacher" };
+    private readonly ListBox _teacherList = new();
+    private readonly TextBlock _teacherName = new() { Classes = { "h1" }, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock _teacherSummary = new() { Classes = { "muted" } };
+    private readonly Grid _grid = new();
+    private readonly TextBlock _gridHint = new() { Classes = { "muted", "small" }, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
     private readonly Button _editButton = new() { Content = "Edit timetable" };
     private readonly Button _cancelEditButton = new() { Content = "Cancel", IsVisible = false };
     private readonly Button _renameButton = new() { Content = "Rename…" };
-    private readonly Button _removeButton = new() { Content = "Remove…" };
-    private readonly TextBlock _gridHint = new() { Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    private readonly Button _removeButton = new() { Content = "Remove…", Classes = { "danger" } };
+    private readonly StackPanel _teacherToolbar = new() { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
 
-    private static readonly IBrush FreeBrush = new SolidColorBrush(Color.Parse("#4CAF50"), 0.30);
-    private static readonly IBrush LessonBrush = new SolidColorBrush(Color.Parse("#808080"), 0.12);
-    private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.Parse("#2196F3"));
-    private static readonly IBrush BreakBrush = new SolidColorBrush(Color.Parse("#FF9800"), 0.18);
+    // Calendar export page
+    private readonly ComboBox _exportTeacher = new() { MinWidth = 260 };
+    private readonly CalendarDatePicker _startDate = new() { Width = 180, SelectedDate = NextMonday(DateTime.Today) };
+    private readonly NumericUpDown _weeks = new() { Value = 13, Minimum = 1, Maximum = 52, Increment = 1, FormatString = "0", Width = 140 };
+    private readonly CheckBox _includeFree = new() { Content = "Free periods", IsChecked = true };
+    private readonly CheckBox _includeLessons = new() { Content = "Lessons", IsChecked = true };
 
     public MainWindow()
     {
         Title = "Timetable Checker";
-        Width = 1100;
-        Height = 720;
-        MinWidth = 760;
-        MinHeight = 520;
+        Width = 1180;
+        Height = 760;
+        MinWidth = 900;
+        MinHeight = 560;
 
-        Content = BuildLayout();
+        _pages["free"] = BuildFreePage();
+        _pages["timetables"] = BuildTimetablesPage();
+        _pages["export"] = BuildExportPage();
+        Content = BuildShell();
 
-        _dayBox.SelectionChanged += (_, _) => { RefreshFreeList(); if (!_editing) RefreshTimetable(); };
-        _periodBox.SelectionChanged += (_, _) => { RefreshFreeList(); if (!_editing) RefreshTimetable(); };
-        _teacherBox.SelectionChanged += (_, _) => RefreshTimetable();
-        _freeList.SelectionChanged += (_, _) => ShowTeacher(_freeList.SelectedItem as Teacher);
-        _busyList.SelectionChanged += (_, _) => ShowTeacher((_busyList.SelectedItem as BusyEntry)?.Teacher);
+        // Events: "when this happens, run this code". (_, _) => ... is a lambda – a small unnamed method.
+        _search.TextChanged += (_, _) => RefreshTeacherList();
+        _teacherList.SelectionChanged += (_, _) =>
+        {
+            if (_teacherList.SelectedItem is Teacher t && t != _teacher)
+            {
+                _teacher = t;
+                RefreshTimetablePage();
+            }
+        };
 
         LoadFolder(FindDefaultFolder());
+        PickDefaultSlot();
+        RefreshFreePage();
+        ShowPage("free");
     }
 
-    // ---------- Layout ----------
+    // ======================= Layout: the shell =======================
 
-    private Control BuildLayout()
+    private Control BuildShell()
     {
-        var openButton = new Button { Content = "Open timetables folder…" };
-        openButton.Click += async (_, _) => await ChooseFolder();
-        var reloadButton = new Button { Content = "Reload" };
-        reloadButton.Click += (_, _) => LoadFolder(_folderLabel.Tag as string);
-        var dayButton = new Button { Content = "School day settings…" };
-        ToolTip.SetTip(dayButton, "Number of periods, period lengths, breaks and lunches");
-        dayButton.Click += async (_, _) => await OpenSchoolDaySettings();
+        var title = new TextBlock { Text = "Timetable Checker", Classes = { "h2" } };
 
-        var topBar = new DockPanel { Margin = new Thickness(16, 12), LastChildFill = true };
-        var topButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        topButtons.Children.Add(openButton);
-        topButtons.Children.Add(reloadButton);
-        topButtons.Children.Add(dayButton);
-        DockPanel.SetDock(topButtons, Dock.Left);
-        topBar.Children.Add(topButtons);
-        _folderLabel.Margin = new Thickness(12, 0, 0, 0);
-        topBar.Children.Add(_folderLabel);
+        var nav = new StackPanel { Spacing = 2, Margin = new Thickness(0, 24, 0, 0) };
+        nav.Children.Add(NavButton("free", "Who's free"));
+        nav.Children.Add(NavButton("timetables", "Timetables"));
+        nav.Children.Add(NavButton("export", "Calendar export"));
 
-        // Left: who's free?
-        var nowButton = new Button { Content = "Free right now", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
-        nowButton.Click += (_, _) => SelectCurrentPeriod();
+        var settings = QuietButton("School day settings…", OpenSchoolDaySettings);
+        ToolTip.SetTip(settings, "Number of periods, period lengths, breaks and lunches");
+        var open = QuietButton("Open timetables folder…", ChooseFolder);
+        var reload = QuietButton("Reload", () => { LoadFolder(_school.Folder); return Task.CompletedTask; });
 
-        var left = new StackPanel { Spacing = 8, Width = 300 };
-        left.Children.Add(Heading("Who's free?"));
-        left.Children.Add(Labelled("Day", _dayBox));
-        left.Children.Add(Labelled("Period", _periodBox));
-        left.Children.Add(nowButton);
-        left.Children.Add(new Separator { Margin = new Thickness(0, 4) });
-        left.Children.Add(_freeHeading);
-        left.Children.Add(_freeList);
-        left.Children.Add(new TextBlock { Text = "Teaching", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 0) });
-        left.Children.Add(_busyList);
+        _folderName.Margin = new Thickness(12, 8, 12, 0);
+        var bottom = new StackPanel { Spacing = 2, Children = { settings, open, reload, _folderName } };
 
-        // Right: one teacher's week + calendar export
-        var exportButton = new Button { Content = "Export to calendar (.ics)…" };
-        exportButton.Click += async (_, _) => await ExportSelectedTeacher();
-        var exportAllButton = new Button { Content = "Export every teacher…" };
-        exportAllButton.Click += async (_, _) => await ExportAllTeachers();
+        var sidebarContent = new DockPanel { Margin = new Thickness(14, 22, 14, 16) };
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        sidebarContent.Children.Add(bottom);
+        sidebarContent.Children.Add(new StackPanel { Children = { new Border { Padding = new Thickness(12, 0), Child = title }, nav } });
 
-        var exportOptions = new WrapPanel { Orientation = Orientation.Horizontal };
-        exportOptions.Children.Add(Labelled("First week", _startDate, 12));
-        exportOptions.Children.Add(Labelled("Repeat for (weeks)", _weeks, 12));
-        var includes = new StackPanel { Spacing = 0, Margin = new Thickness(0, 0, 12, 0) };
-        includes.Children.Add(new TextBlock { Text = "Include", Opacity = 0.8 });
-        includes.Children.Add(_includeFree);
-        includes.Children.Add(_includeLessons);
-        exportOptions.Children.Add(includes);
+        var sidebar = new Border { Classes = { "sidebar" }, Child = sidebarContent };
 
-        var exportButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        exportButtons.Children.Add(exportButton);
-        exportButtons.Children.Add(exportAllButton);
+        _statusBar.Child = _status;
+        var main = new DockPanel();
+        DockPanel.SetDock(_statusBar, Dock.Bottom);
+        main.Children.Add(_statusBar);
+        main.Children.Add(_pageHost);
 
-        var right = new StackPanel { Spacing = 10 };
-        right.Children.Add(Heading("Teacher timetable"));
-        var addButton = new Button { Content = "Add teacher…" };
-        addButton.Click += async (_, _) => await AddTeacher();
-        _renameButton.Click += async (_, _) => await RenameTeacher();
-        _removeButton.Click += async (_, _) => await RemoveTeacher();
-        _editButton.Click += (_, _) => ToggleEditing();
-        _cancelEditButton.Click += (_, _) => { _editing = false; RefreshTimetable(); };
-
-        var teacherRow = new WrapPanel { Orientation = Orientation.Horizontal };
-        teacherRow.Children.Add(Labelled("Teacher", _teacherBox, 12));
-        var manageButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 8) };
-        manageButtons.Children.Add(addButton);
-        manageButtons.Children.Add(_renameButton);
-        manageButtons.Children.Add(_removeButton);
-        manageButtons.Children.Add(_editButton);
-        manageButtons.Children.Add(_cancelEditButton);
-        teacherRow.Children.Add(manageButtons);
-        right.Children.Add(teacherRow);
-        right.Children.Add(new ScrollViewer
-        {
-            Content = _timetableGrid,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-        });
-        right.Children.Add(_gridHint);
-        right.Children.Add(new Separator { Margin = new Thickness(0, 4) });
-        right.Children.Add(Heading("Add to Apple Calendar / Outlook / Google Calendar"));
-        right.Children.Add(exportOptions);
-        right.Children.Add(exportButtons);
-        right.Children.Add(_status);
-
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,24,*"), Margin = new Thickness(16, 0, 16, 16) };
-        Grid.SetColumn(left, 0);
-        Grid.SetColumn(right, 2);
-        body.Children.Add(left);
-        body.Children.Add(right);
-
-        var root = new DockPanel();
-        DockPanel.SetDock(topBar, Dock.Top);
-        root.Children.Add(topBar);
-        root.Children.Add(new ScrollViewer { Content = body });
+        var root = new Grid { ColumnDefinitions = new ColumnDefinitions("230,*") };
+        Grid.SetColumn(main, 1);
+        root.Children.Add(sidebar);
+        root.Children.Add(main);
         return root;
     }
 
-    private static TextBlock Heading(string text) =>
-        new() { Text = text, FontSize = 20, FontWeight = FontWeight.Bold, Margin = new Thickness(0, 0, 0, 4) };
-
-    private static Control Labelled(string label, Control control, double rightMargin = 0)
+    private Button NavButton(string page, string text)
     {
-        var panel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, rightMargin, 8) };
-        panel.Children.Add(new TextBlock { Text = label, Opacity = 0.8 });
-        control.HorizontalAlignment = HorizontalAlignment.Stretch;
-        panel.Children.Add(control);
-        return panel;
+        var button = new Button { Content = text, Classes = { "nav" } };
+        button.Click += (_, _) => ShowPage(page);
+        _navButtons[page] = button;
+        return button;
     }
 
-    // ---------- Loading ----------
+    /// <summary>A plain sidebar button. Func&lt;Task&gt; means "a method that can be awaited".</summary>
+    private static Button QuietButton(string text, Func<Task> onClick)
+    {
+        var button = new Button { Content = text, Classes = { "quiet" } };
+        button.Click += async (_, _) => await onClick();
+        return button;
+    }
+
+    private void ShowPage(string page)
+    {
+        _pageHost.Content = _pages[page];
+        foreach (var (name, button) in _navButtons)
+            button.Classes.Set("active", name == page); // the active tab is styled differently in App.axaml
+        if (page == "export") RefreshExportPage();
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _status.Text = message;
+        _status.Classes.Set("error", isError);
+        _statusBar.IsVisible = message.Length > 0; // hide the bar when there's nothing to say
+    }
+
+    // ======================= Page 1: Who's free =======================
+
+    private Control BuildFreePage()
+    {
+        var now = new Button { Content = "Right now", Classes = { "accent" }, VerticalAlignment = VerticalAlignment.Center };
+        now.Click += (_, _) => ShowRightNow();
+
+        var header = new DockPanel();
+        DockPanel.SetDock(now, Dock.Right);
+        header.Children.Add(now);
+        header.Children.Add(new TextBlock { Text = "Who's free", Classes = { "h1" } });
+
+        var page = new StackPanel { Spacing = 14, Margin = new Thickness(32, 28, 32, 28) };
+        page.Children.Add(header);
+        page.Children.Add(_dayButtons);
+        page.Children.Add(_ribbon);
+        page.Children.Add(new Border { Height = 8 });
+        page.Children.Add(_answer);
+        page.Children.Add(_freeBadges);
+        page.Children.Add(_teachingHeading);
+        page.Children.Add(_teachingTable);
+        return new ScrollViewer { Content = page };
+    }
+
+    /// <summary>Chooses today and the period happening now, or the first day and period.</summary>
+    private void PickDefaultSlot()
+    {
+        var slot = _school.SlotAt(DateTime.Now);
+        _day = slot?.Day
+               ?? _school.Days.FirstOrDefault(d => School.ToDayOfWeek(d) == DateTime.Today.DayOfWeek)
+               ?? _school.Days.FirstOrDefault();
+        _period = slot?.Period ?? _school.Periods.FirstOrDefault();
+    }
+
+    private void ShowRightNow()
+    {
+        var now = DateTime.Now;
+        var slot = _school.SlotAt(now);
+        _breakNow = slot is null ? _school.BreakAt(now) : null;
+
+        if (slot is not null)
+        {
+            (_day, _period) = slot.Value; // "deconstructs" the pair into the two fields
+        }
+        else if (_breakNow is not null)
+        {
+            _day = _school.Days.First(d => School.ToDayOfWeek(d) == now.DayOfWeek);
+            _period = null;
+        }
+        else
+        {
+            SetStatus("There are no lessons right now – it's outside the school day.");
+            return;
+        }
+        SetStatus("");
+        RefreshFreePage();
+    }
+
+    private void RefreshFreePage()
+    {
+        // --- Day buttons ---
+        _dayButtons.Children.Clear();
+        foreach (var day in _school.Days)
+        {
+            var button = new Button { Content = day, Classes = { "chip" } };
+            button.Classes.Set("selected", day == _day && _breakNow is null);
+            button.Click += (_, _) => { _day = day; _breakNow = null; RefreshFreePage(); };
+            _dayButtons.Children.Add(button);
+        }
+
+        RefreshRibbon();
+
+        // --- The answer ---
+        _freeBadges.Children.Clear();
+        _teachingTable.Children.Clear();
+        _teachingTable.RowDefinitions.Clear();
+        _teachingHeading.IsVisible = false;
+
+        if (_school.Teachers.Count == 0)
+        {
+            _answer.Text = "No timetables yet. Add a teacher on the Timetables page, or open a folder of timetables.";
+            return;
+        }
+        if (_breakNow is not null)
+        {
+            _answer.Text = $"It's {_breakNow.Name} until {_breakNow.End:hh\\:mm}, so everyone is free.";
+            return;
+        }
+        if (_day is null || _period is null)
+        {
+            _answer.Text = "Pick a day and a period.";
+            return;
+        }
+
+        var free = _school.FreeTeachers(_day, _period.Name).ToList();
+        var busy = _school.BusyTeachers(_day, _period.Name).ToList();
+        var when = _period.HasTimes ? $"{_day}, {_period.Name} ({_period.Start:hh\\:mm}–{_period.End:hh\\:mm})" : $"{_day}, {_period.Name}";
+
+        // A "switch expression": picks the sentence that matches the number of free teachers
+        _answer.Text = free.Count switch
+        {
+            0 => $"Everyone is teaching on {when}.",
+            1 => $"1 teacher is free on {when}",
+            _ => $"{free.Count} teachers are free on {when}",
+        };
+
+        foreach (var teacher in free)
+        {
+            var badge = new Button { Content = teacher.Name, Classes = { "badge" } };
+            ToolTip.SetTip(badge, $"Open {teacher.Name}'s timetable");
+            badge.Click += (_, _) => OpenTeacher(teacher);
+            _freeBadges.Children.Add(badge);
+        }
+
+        // Who's teaching, and what – useful for knowing which class needs covering
+        _teachingHeading.IsVisible = busy.Count > 0;
+        _teachingHeading.Text = $"Teaching ({busy.Count})";
+        for (int i = 0; i < busy.Count; i++)
+        {
+            _teachingTable.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            var name = new TextBlock { Text = busy[i].Name, Margin = new Thickness(0, 4) };
+            var lesson = new TextBlock { Text = busy[i].LessonAt(_day, _period.Name), Classes = { "muted" }, Margin = new Thickness(0, 4) };
+            Grid.SetRow(name, i);
+            Grid.SetRow(lesson, i);
+            Grid.SetColumn(lesson, 2);
+            _teachingTable.Children.Add(name);
+            _teachingTable.Children.Add(lesson);
+        }
+    }
+
+    /// <summary>
+    /// The day ribbon: the school day drawn as a strip, where each period's width matches how long it is,
+    /// and breaks/lunches are the gaps in between. It uses a Grid whose columns have "star" widths:
+    /// a 60-minute period gets 60*, a 20-minute break gets 20*, so the space is shared out in proportion.
+    /// </summary>
+    private void RefreshRibbon()
+    {
+        _ribbon.Children.Clear();
+        _ribbon.ColumnDefinitions.Clear();
+
+        var nowSlot = _school.SlotAt(DateTime.Now);
+        int column = 0;
+
+        foreach (var (period, breakSlot) in DayRows())
+        {
+            Control piece;
+            if (period is not null)
+            {
+                _ribbon.ColumnDefinitions.Add(new ColumnDefinition(Minutes(period.Start, period.End), GridUnitType.Star));
+                bool isNow = nowSlot is { } s && s.Period == period && s.Day == _day;
+                var segment = new Button
+                {
+                    Classes = { "segment" },
+                    Content = new StackPanel
+                    {
+                        Children =
+                        {
+                            new TextBlock { Text = period.Name, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis },
+                            new TextBlock
+                            {
+                                Text = isNow ? "Now" : period.HasTimes ? $"{period.Start:hh\\:mm}" : "",
+                                FontSize = 12,
+                                FontWeight = isNow ? FontWeight.Bold : FontWeight.Normal,
+                                Opacity = isNow ? 1 : 0.75,
+                            },
+                        },
+                    },
+                };
+                segment.Classes.Set("selected", period == _period && _breakNow is null);
+                if (period.HasTimes) ToolTip.SetTip(segment, period.ToString());
+                segment.Click += (_, _) => { _period = period; _breakNow = null; RefreshFreePage(); };
+                piece = segment;
+            }
+            else
+            {
+                _ribbon.ColumnDefinitions.Add(new ColumnDefinition(Minutes(breakSlot!.Start, breakSlot.End), GridUnitType.Star));
+                piece = new Border { Classes = { "ribbonbreak" }, Child = new TextBlock { Text = breakSlot.Name } };
+                ToolTip.SetTip(piece, breakSlot.ToString());
+            }
+
+            Grid.SetColumn(piece, column++);
+            _ribbon.Children.Add(piece);
+        }
+    }
+
+    private static double Minutes(TimeSpan? start, TimeSpan? end) =>
+        start is { } s && end is { } e && e > s ? (e - s).TotalMinutes : 60;
+
+    /// <summary>
+    /// The school day in order: each period, followed by any break or lunch that comes straight after it.
+    /// Each item is a pair where exactly one side is filled in.
+    /// </summary>
+    private List<(Period? Period, BreakSlot? Break)> DayRows()
+    {
+        var rows = new List<(Period?, BreakSlot?)>();
+        for (int p = 0; p < _school.Periods.Count; p++)
+        {
+            var period = _school.Periods[p];
+            rows.Add((period, null));
+            var nextStart = p + 1 < _school.Periods.Count ? _school.Periods[p + 1].Start : null;
+            foreach (var b in _school.Breaks.Where(b => period.End is { } end && b.Start >= end && (nextStart is null || b.End <= nextStart)))
+                rows.Add((null, b));
+        }
+        return rows;
+    }
+
+    // ======================= Page 2: Timetables =======================
+
+    private Control BuildTimetablesPage()
+    {
+        var add = new Button { Content = "Add teacher…", Classes = { "accent" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        add.Click += async (_, _) => await AddTeacher();
+
+        var listPane = new DockPanel { Margin = new Thickness(16, 24, 16, 16) };
+        DockPanel.SetDock(_search, Dock.Top);
+        DockPanel.SetDock(add, Dock.Bottom);
+        _search.Margin = new Thickness(0, 0, 0, 10);
+        add.Margin = new Thickness(0, 10, 0, 0);
+        listPane.Children.Add(_search);
+        listPane.Children.Add(add);
+        listPane.Children.Add(_teacherList);
+
+        _editButton.Click += (_, _) => ToggleEditing();
+        _cancelEditButton.Click += (_, _) => { _editing = false; RefreshTimetablePage(); };
+        _renameButton.Click += async (_, _) => await RenameTeacher();
+        _removeButton.Click += async (_, _) => await RemoveTeacher();
+        _teacherToolbar.Children.AddRange(new Control[] { _editButton, _cancelEditButton, _renameButton, _removeButton });
+
+        var titles = new StackPanel { Spacing = 2, Children = { _teacherName, _teacherSummary } };
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20) };
+        DockPanel.SetDock(_teacherToolbar, Dock.Right);
+        header.Children.Add(_teacherToolbar);
+        header.Children.Add(titles);
+
+        var gridScroller = new ScrollViewer
+        {
+            Content = _grid,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, // lets the "*" columns fill the width
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+
+        var detail = new DockPanel { Margin = new Thickness(32, 28, 32, 20) };
+        DockPanel.SetDock(header, Dock.Top);
+        DockPanel.SetDock(_gridHint, Dock.Bottom);
+        detail.Children.Add(header);
+        detail.Children.Add(_gridHint);
+        detail.Children.Add(gridScroller);
+
+        var page = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*") };
+        var left = new Border { Classes = { "listpane" }, Child = listPane };
+        Grid.SetColumn(detail, 1);
+        page.Children.Add(left);
+        page.Children.Add(detail);
+        return page;
+    }
+
+    private void OpenTeacher(Teacher teacher)
+    {
+        _teacher = teacher;
+        _search.Text = "";
+        RefreshTeacherList();
+        RefreshTimetablePage();
+        ShowPage("timetables");
+    }
+
+    private void RefreshTeacherList()
+    {
+        var term = (_search.Text ?? "").Trim();
+        // LINQ: keep only the teachers whose name contains the search text
+        var matches = _school.Teachers.Where(t => t.Name.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
+        _teacherList.ItemsSource = matches;
+        _teacherList.SelectedItem = _teacher is not null && matches.Contains(_teacher) ? _teacher : null;
+    }
+
+    private void RefreshTimetablePage()
+    {
+        _grid.Children.Clear();
+        _grid.RowDefinitions.Clear();
+        _grid.ColumnDefinitions.Clear();
+        _lessonEditors.Clear();
+
+        var teacher = _teacher;
+        if (teacher is null) _editing = false;
+
+        // The toolbar and the list change depending on whether we're editing
+        _teacherToolbar.IsVisible = teacher is not null;
+        _editButton.Content = _editing ? "Save changes" : "Edit timetable";
+        _editButton.Classes.Set("accent", _editing);
+        _cancelEditButton.IsVisible = _editing;
+        _renameButton.IsVisible = _removeButton.IsVisible = !_editing;
+        _teacherList.IsEnabled = _search.IsEnabled = !_editing;
+
+        if (teacher is null)
+        {
+            _teacherName.Text = "No teacher selected";
+            _teacherSummary.Text = _school.Teachers.Count == 0 ? "Click “Add teacher…” to create the first timetable." : "Pick a teacher from the list.";
+            _gridHint.Text = "";
+            return;
+        }
+
+        _teacherName.Text = teacher.Name;
+        int slots = _school.Days.Count * _school.Periods.Count;
+        int lessons = _school.Days.Sum(d => _school.Periods.Count(p => teacher.LessonAt(d, p.Name) is not null));
+        _teacherSummary.Text = $"{lessons} lessons and {slots - lessons} free periods a week";
+        _gridHint.Text = _editing
+            ? "Type the class in each box, or leave it empty for a free period, then click “Save changes”. To change times, breaks or the number of periods, use School day settings."
+            : "Green cells are free periods.";
+
+        // Column 0 holds the period names, then one column per day
+        _grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        // "*" columns share the space equally; MinWidth stops them getting too squashed in a small window
+        foreach (var _ in _school.Days) _grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 96 });
+        _grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        for (int d = 0; d < _school.Days.Count; d++)
+            AddCell(0, d + 1, new TextBlock { Text = _school.Days[d], FontWeight = FontWeight.SemiBold }, "plain");
+
+        int row = 0;
+        foreach (var (period, breakSlot) in DayRows())
+        {
+            row++;
+            if (breakSlot is not null)
+            {
+                // A thin band across the whole week
+                _grid.RowDefinitions.Add(new RowDefinition(new GridLength(30)));
+                AddCell(row, 0, new TextBlock { Text = $"{breakSlot.Start:hh\\:mm}–{breakSlot.End:hh\\:mm}", Classes = { "muted", "small" } }, "plain");
+                var band = AddCell(row, 1, new TextBlock { Text = breakSlot.Name }, "break");
+                Grid.SetColumnSpan(band, Math.Max(1, _school.Days.Count));
+                continue;
+            }
+
+            _grid.RowDefinitions.Add(new RowDefinition(new GridLength(54)));
+            var label = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = period!.Name, FontWeight = FontWeight.SemiBold },
+                    new TextBlock { Text = period.HasTimes ? $"{period.Start:hh\\:mm}–{period.End:hh\\:mm}" : "", Classes = { "muted", "small" } },
+                },
+            };
+            AddCell(row, 0, label, "plain");
+
+            for (int d = 0; d < _school.Days.Count; d++)
+            {
+                var day = _school.Days[d];
+                var lesson = teacher.LessonAt(day, period.Name);
+
+                if (_editing)
+                {
+                    var box = new TextBox { Text = lesson ?? "", Watermark = "Free", Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center };
+                    Grid.SetRow(box, row);
+                    Grid.SetColumn(box, d + 1);
+                    _grid.Children.Add(box);
+                    _lessonEditors[(day, period.Name)] = box;
+                }
+                else
+                {
+                    AddCell(row, d + 1, new TextBlock { Text = lesson ?? "Free" }, lesson is null ? "free" : "lesson");
+                }
+            }
+        }
+    }
+
+    /// <summary>Adds a rounded cell to the timetable grid. Its colour comes from its class (free, lesson, break or plain).</summary>
+    private Border AddCell(int row, int column, Control content, string kind)
+    {
+        var cell = new Border { Classes = { "cell", kind }, Child = content };
+        Grid.SetRow(cell, row);
+        Grid.SetColumn(cell, column);
+        _grid.Children.Add(cell);
+        return cell;
+    }
+
+    // ======================= Page 3: Calendar export =======================
+
+    private Control BuildExportPage()
+    {
+        var exportOne = new Button { Content = "Export this teacher…", Classes = { "accent" } };
+        exportOne.Click += async (_, _) => await ExportSelectedTeacher();
+        var exportAll = new Button { Content = "Export every teacher…" };
+        exportAll.Click += async (_, _) => await ExportAllTeachers();
+
+        var options = new WrapPanel();
+        options.Children.Add(Field("Teacher", _exportTeacher));
+        options.Children.Add(Field("First week", _startDate));
+        options.Children.Add(Field("Repeat for (weeks)", _weeks));
+        options.Children.Add(Field("Include", new StackPanel { Children = { _includeFree, _includeLessons } }));
+
+        var page = new StackPanel { Spacing = 14, Margin = new Thickness(32, 28, 32, 28), MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Left };
+        page.Children.Add(new TextBlock { Text = "Add a timetable to a calendar", Classes = { "h1" } });
+        page.Children.Add(new TextBlock
+        {
+            Text = "Each period becomes an event that repeats every week, starting from the first week you choose. " +
+                   "Free periods are marked as available, so they won't block your calendar.",
+            TextWrapping = TextWrapping.Wrap,
+            Classes = { "muted" },
+        });
+        page.Children.Add(options);
+        page.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { exportOne, exportAll } });
+
+        page.Children.Add(new TextBlock { Text = "Opening the file", Classes = { "h3" }, Margin = new Thickness(0, 16, 0, 0) });
+        var howTo = new[]
+        {
+            ("Apple Calendar", "double-click the .ics file and choose which calendar to add it to. On an iPhone or iPad, AirDrop or email it to yourself and tap it."),
+            ("Outlook", "File → Open & Export → Import/Export → Import an iCalendar file."),
+            ("Google Calendar", "Settings → Import & export → Import."),
+        };
+        foreach (var (app, how) in howTo)
+        {
+            var line = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            line.Inlines!.Add(new Run(app) { FontWeight = FontWeight.SemiBold });
+            line.Inlines.Add(new Run(": " + how));
+            page.Children.Add(line);
+        }
+        return new ScrollViewer { Content = page };
+    }
+
+    private static Control Field(string label, Control control) => new StackPanel
+    {
+        Spacing = 6,
+        Margin = new Thickness(0, 0, 20, 12),
+        Children = { new TextBlock { Text = label, Classes = { "muted" } }, control },
+    };
+
+    private void RefreshExportPage()
+    {
+        _exportTeacher.ItemsSource = _school.Teachers.ToList();
+        _exportTeacher.SelectedItem = _teacher ?? _school.Teachers.FirstOrDefault();
+    }
+
+    // ======================= Loading the timetables folder =======================
 
     /// <summary>Where new timetables go if no folder has been opened: Documents/Timetable Checker/timetables.</summary>
     private static string DocumentsFolder =>
@@ -208,6 +638,7 @@ public class MainWindow : Window
 
     private async Task ChooseFolder()
     {
+        if (_editing) { SetStatus("Save or cancel your changes first."); return; }
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "Choose the folder containing the teachers' timetable CSV files",
@@ -217,217 +648,71 @@ public class MainWindow : Window
         if (path is not null) LoadFolder(path);
     }
 
+    /// <summary>Loads every timetable in a folder, keeping the current selections where they still exist.</summary>
     private void LoadFolder(string? folder, string? selectTeacher = null)
     {
         _editing = false;
+        var oldPeriodIndex = _period is null ? 0 : Math.Max(0, _school.Periods.IndexOf(_period));
+        selectTeacher ??= _teacher?.Name; // ??= means "only if it's null"
+
         if (folder is null || !Directory.Exists(folder))
         {
             _school = new School();
-            _folderLabel.Text = "No timetables loaded – click “Open timetables folder…”";
-            _folderLabel.Tag = null;
+            _folderName.Text = "No timetables folder open";
+            ToolTip.SetTip(_folderName, null);
         }
         else
         {
             _school = School.Load(folder);
-            _folderLabel.Text = $"{folder}   ·   {_school.Teachers.Count} teachers";
-            _folderLabel.Tag = folder;
+            _folderName.Text = $"{Path.GetFileName(folder)} folder, {_school.Teachers.Count} teachers";
+            ToolTip.SetTip(_folderName, folder);
             RememberFolder(folder);
         }
 
-        _dayBox.ItemsSource = _school.Days.ToList();
-        _periodBox.ItemsSource = _school.Periods.ToList();
-        _teacherBox.ItemsSource = _school.Teachers.ToList();
-        _dayBox.SelectedIndex = _school.Days.Count > 0 ? 0 : -1;
-        _periodBox.SelectedIndex = _school.Periods.Count > 0 ? 0 : -1;
-        _teacherBox.SelectedItem = _school.Teachers.FirstOrDefault(t => t.Name == selectTeacher) ?? _school.Teachers.FirstOrDefault();
+        // Keep the same day/period/teacher if they still exist, otherwise fall back sensibly
+        _day = _school.Days.FirstOrDefault(d => d == _day) ?? _school.Days.FirstOrDefault();
+        _period = _school.Periods.FirstOrDefault(p => p.Name == _period?.Name)
+                  ?? (_school.Periods.Count > 0 ? _school.Periods[Math.Min(oldPeriodIndex, _school.Periods.Count - 1)] : null);
+        _teacher = _school.Teachers.FirstOrDefault(t => t.Name == selectTeacher) ?? _school.Teachers.FirstOrDefault();
+        _breakNow = null;
 
-        _status.Text = _school.Warnings.Count > 0
-            ? "Some files could not be read:\n" + string.Join("\n", _school.Warnings)
-            : "";
+        if (_school.Warnings.Count > 0)
+            SetStatus("Some files could not be read: " + string.Join("  ", _school.Warnings), isError: true);
+        else
+            SetStatus("");
 
-        RefreshFreeList();
-        RefreshTimetable();
+        RefreshFreePage();
+        RefreshTeacherList();
+        RefreshTimetablePage();
+        RefreshExportPage();
     }
 
-    // ---------- Who's free ----------
-
-    private record BusyEntry(Teacher Teacher, string Lesson)
-    {
-        public override string ToString() => $"{Teacher.Name} – {Lesson}";
-    }
-
-    private void SelectCurrentPeriod()
-    {
-        var now = DateTime.Now;
-        var slot = _school.SlotAt(now);
-        if (slot is null)
-        {
-            var breakNow = _school.BreakAt(now);
-            _freeHeading.Text = breakNow is not null
-                ? $"It's {breakNow.Name} until {breakNow.End:hh\\:mm} – everyone is free"
-                : "No lesson is happening right now";
-            _freeList.ItemsSource = null;
-            _busyList.ItemsSource = null;
-            return;
-        }
-        _dayBox.SelectedItem = slot.Value.Day;
-        _periodBox.SelectedItem = slot.Value.Period;
-    }
-
-    private void RefreshFreeList()
-    {
-        if (_dayBox.SelectedItem is not string day || _periodBox.SelectedItem is not Period period)
-        {
-            _freeHeading.Text = "Free teachers";
-            _freeList.ItemsSource = null;
-            _busyList.ItemsSource = null;
-            return;
-        }
-
-        var free = _school.FreeTeachers(day, period.Name).ToList();
-        _freeHeading.Text = free.Count switch
-        {
-            0 => $"Nobody is free {day} {period.Name}",
-            1 => $"1 teacher free {day} {period.Name}",
-            _ => $"{free.Count} teachers free {day} {period.Name}",
-        };
-        _freeList.ItemsSource = free;
-        _busyList.ItemsSource = _school.BusyTeachers(day, period.Name)
-            .Select(t => new BusyEntry(t, t.LessonAt(day, period.Name)!))
-            .ToList();
-    }
-
-    private void ShowTeacher(Teacher? teacher)
-    {
-        if (teacher is not null) _teacherBox.SelectedItem = teacher;
-    }
-
-    // ---------- Timetable grid ----------
-
-    private void RefreshTimetable()
-    {
-        _timetableGrid.Children.Clear();
-        _timetableGrid.RowDefinitions.Clear();
-        _timetableGrid.ColumnDefinitions.Clear();
-        _lessonEditors.Clear();
-
-        var teacher = _teacherBox.SelectedItem as Teacher;
-        if (teacher is null) _editing = false;
-        _editButton.Content = _editing ? "Save changes" : "Edit timetable";
-        _cancelEditButton.IsVisible = _editing;
-        _editButton.IsEnabled = teacher is not null;
-        _renameButton.IsEnabled = _removeButton.IsEnabled = teacher is not null && !_editing;
-        _teacherBox.IsEnabled = !_editing;
-        _gridHint.Text = teacher is null
-            ? "No teachers yet – click “Add teacher…” to create one."
-            : _editing
-                ? "Type the class in each box, or leave it empty for a free period, then click “Save changes”. To change period times, breaks or the number of periods, use “School day settings…”."
-                : "Green = free period. The blue outline is the period picked on the left.";
-        if (teacher is null) return;
-
-        _timetableGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-        foreach (var _ in _school.Days) _timetableGrid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(120)));
-        _timetableGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-
-        for (int d = 0; d < _school.Days.Count; d++)
-            AddCell(0, d + 1, _school.Days[d], null, bold: true);
-
-        var selectedDay = _dayBox.SelectedItem as string;
-        var selectedPeriod = (_periodBox.SelectedItem as Period)?.Name;
-        int row = 0;
-
-        for (int p = 0; p < _school.Periods.Count; p++)
-        {
-            var period = _school.Periods[p];
-            row++;
-            _timetableGrid.RowDefinitions.Add(new RowDefinition(new GridLength(52)));
-            var label = period.HasTimes ? $"{period.Name}\n{period.Start:hh\\:mm}–{period.End:hh\\:mm}" : period.Name;
-            AddCell(row, 0, label, null, bold: true);
-
-            for (int d = 0; d < _school.Days.Count; d++)
-            {
-                var day = _school.Days[d];
-                var lesson = teacher.LessonAt(day, period.Name);
-                if (_editing)
-                {
-                    var box = new TextBox { Text = lesson ?? "", Watermark = "Free", Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center };
-                    Grid.SetRow(box, row);
-                    Grid.SetColumn(box, d + 1);
-                    _timetableGrid.Children.Add(box);
-                    _lessonEditors[(day, period.Name)] = box;
-                    continue;
-                }
-                var cell = AddCell(row, d + 1, lesson ?? "Free", lesson is null ? FreeBrush : LessonBrush, bold: lesson is null);
-                if (day == selectedDay && period.Name == selectedPeriod)
-                {
-                    cell.BorderBrush = HighlightBrush;
-                    cell.BorderThickness = new Thickness(2);
-                }
-            }
-
-            // Breaks and lunches that come straight after this period get a thin row across the week
-            var nextStart = p + 1 < _school.Periods.Count ? _school.Periods[p + 1].Start : null;
-            foreach (var b in _school.Breaks.Where(b => period.End is { } end && b.Start >= end && (nextStart is null || b.End <= nextStart)))
-            {
-                row++;
-                _timetableGrid.RowDefinitions.Add(new RowDefinition(new GridLength(30)));
-                AddCell(row, 0, $"{b.Start:hh\\:mm}–{b.End:hh\\:mm}", null, bold: false).Opacity = 0.75;
-                var band = AddCell(row, 1, b.Name, BreakBrush, bold: true);
-                Grid.SetColumnSpan(band, Math.Max(1, _school.Days.Count));
-                ((TextBlock)band.Child!).HorizontalAlignment = HorizontalAlignment.Center;
-            }
-        }
-    }
-
-    private Border AddCell(int row, int col, string text, IBrush? background, bool bold)
-    {
-        var cell = new Border
-        {
-            Background = background,
-            CornerRadius = new CornerRadius(6),
-            Margin = new Thickness(2),
-            Padding = new Thickness(8, 4),
-            Child = new TextBlock
-            {
-                Text = text,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal,
-            },
-        };
-        Grid.SetRow(cell, row);
-        Grid.SetColumn(cell, col);
-        _timetableGrid.Children.Add(cell);
-        return cell;
-    }
-
-    // ---------- Adding, editing and removing teachers ----------
+    // ======================= Adding, editing and removing teachers =======================
 
     private async Task AddTeacher()
     {
-        if (_editing) { _status.Text = "Save or cancel your changes first."; return; }
+        if (_editing) { SetStatus("Save or cancel your changes first."); return; }
         var name = await Dialogs.AskText(this, "Add teacher", "Teacher's name (this is also the CSV file name):", "",
             text => _school.CheckName(text));
         if (name is null) return;
 
-        var folder = _school.Folder ?? DocumentsFolder;
         try
         {
-            var teacher = _school.AddTeacher(folder, name);
+            var teacher = _school.AddTeacher(_school.Folder ?? DocumentsFolder, name);
             LoadFolder(_school.Folder, teacher.Name);
             _editing = true; // jump straight into filling in their timetable
-            RefreshTimetable();
-            _status.Text = $"Added {teacher.Name}. Fill in their lessons, then click “Save changes”.";
+            RefreshTimetablePage();
+            SetStatus($"Added {teacher.Name}. Fill in their lessons, then click “Save changes”.");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Couldn't add {name}: {ex.Message}";
+            SetStatus($"Couldn't add {name}: {ex.Message}", isError: true);
         }
     }
 
     private async Task RenameTeacher()
     {
-        if (_teacherBox.SelectedItem is not Teacher teacher) return;
+        if (_teacher is not { } teacher) return;
         var name = await Dialogs.AskText(this, "Rename teacher", $"New name for {teacher.Name}:", teacher.Name,
             text => _school.CheckName(text, except: teacher));
         if (name is null || name == teacher.Name) return;
@@ -437,17 +722,17 @@ public class MainWindow : Window
             var oldName = teacher.Name;
             _school.RenameTeacher(teacher, name);
             LoadFolder(_school.Folder, name);
-            _status.Text = $"Renamed {oldName} to {name}.";
+            SetStatus($"Renamed {oldName} to {name}.");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Couldn't rename: {ex.Message}";
+            SetStatus($"Couldn't rename {teacher.Name}: {ex.Message}", isError: true);
         }
     }
 
     private async Task RemoveTeacher()
     {
-        if (_teacherBox.SelectedItem is not Teacher teacher) return;
+        if (_teacher is not { } teacher) return;
         bool sure = await Dialogs.Confirm(this, "Remove teacher",
             $"Remove {teacher.Name}? This deletes their timetable file:\n{teacher.FilePath}", "Remove");
         if (!sure) return;
@@ -455,22 +740,23 @@ public class MainWindow : Window
         try
         {
             _school.RemoveTeacher(teacher);
+            _teacher = null;
             LoadFolder(_school.Folder);
-            _status.Text = $"Removed {teacher.Name}.";
+            SetStatus($"Removed {teacher.Name}.");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Couldn't remove {teacher.Name}: {ex.Message}";
+            SetStatus($"Couldn't remove {teacher.Name}: {ex.Message}", isError: true);
         }
     }
 
     private void ToggleEditing()
     {
-        if (_teacherBox.SelectedItem is not Teacher teacher) return;
+        if (_teacher is not { } teacher) return;
         if (!_editing)
         {
             _editing = true;
-            RefreshTimetable();
+            RefreshTimetablePage();
             return;
         }
 
@@ -479,22 +765,22 @@ public class MainWindow : Window
             foreach (var ((day, period), box) in _lessonEditors) teacher.SetLesson(day, period, box.Text ?? "");
             _school.Save(teacher);
             _editing = false;
-            _status.Text = $"Saved {teacher.Name}'s timetable.";
+            SetStatus($"Saved {teacher.Name}'s timetable.");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Couldn't save: {ex.Message}";
+            SetStatus($"Couldn't save {teacher.Name}'s timetable: {ex.Message}", isError: true);
         }
 
-        RefreshFreeList();
-        RefreshTimetable();
+        RefreshFreePage();
+        RefreshTimetablePage();
     }
 
-    // ---------- School day settings ----------
+    // ======================= School day settings =======================
 
     private async Task OpenSchoolDaySettings()
     {
-        if (_editing) { _status.Text = "Save or cancel your changes first."; return; }
+        if (_editing) { SetStatus("Save or cancel your changes first."); return; }
 
         var schedule = await new SchoolDayWindow(_school.Schedule).ShowAsync(this);
         if (schedule is null) return;
@@ -518,20 +804,17 @@ public class MainWindow : Window
                 Directory.CreateDirectory(DocumentsFolder);
                 LoadFolder(DocumentsFolder);
             }
-            var teacherName = (_teacherBox.SelectedItem as Teacher)?.Name;
-            var periodIndex = _periodBox.SelectedIndex;
             _school.ApplySchedule(schedule);
-            LoadFolder(_school.Folder, teacherName);
-            _periodBox.SelectedIndex = Math.Min(Math.Max(periodIndex, 0), _school.Periods.Count - 1);
-            _status.Text = $"Saved the school day: {_school.Periods.Count} periods and {_school.Breaks.Count} break{(_school.Breaks.Count == 1 ? "" : "s")}. Every teacher's timetable has been updated.";
+            LoadFolder(_school.Folder);
+            SetStatus($"Saved the school day: {_school.Periods.Count} periods and {_school.Breaks.Count} break{(_school.Breaks.Count == 1 ? "" : "s")}. Every teacher's timetable has been updated.");
         }
         catch (Exception ex)
         {
-            _status.Text = $"Couldn't save the school day settings: {ex.Message}";
+            SetStatus($"Couldn't save the school day settings: {ex.Message}", isError: true);
         }
     }
 
-    // ---------- Calendar export ----------
+    // ======================= Calendar export =======================
 
     private bool TryGetExportSettings(out DateTime firstWeek, out int weeks, out bool free, out bool lessons)
     {
@@ -542,12 +825,12 @@ public class MainWindow : Window
 
         if (!free && !lessons)
         {
-            _status.Text = "Tick “Free periods”, “Lessons” or both before exporting.";
+            SetStatus("Tick “Free periods”, “Lessons” or both before exporting.", isError: true);
             return false;
         }
         if (!_school.Periods.Any(p => p.HasTimes))
         {
-            _status.Text = "The timetables need Start and End times to be exported to a calendar.";
+            SetStatus("Periods need start and end times to go in a calendar. Set them in School day settings.", isError: true);
             return false;
         }
         return true;
@@ -555,7 +838,7 @@ public class MainWindow : Window
 
     private async Task ExportSelectedTeacher()
     {
-        if (_teacherBox.SelectedItem is not Teacher teacher) { _status.Text = "Pick a teacher first."; return; }
+        if (_exportTeacher.SelectedItem is not Teacher teacher) { SetStatus("Pick a teacher to export.", isError: true); return; }
         if (!TryGetExportSettings(out var firstWeek, out var weeks, out var free, out var lessons)) return;
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -573,12 +856,12 @@ public class MainWindow : Window
         await using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
             await writer.WriteAsync(ics);
 
-        _status.Text = $"Saved {file.Name}. Double-click it (or drag it into Apple Calendar / Outlook) to add the events.";
+        SetStatus($"Saved {file.Name}. Open it to add the events to your calendar.");
     }
 
     private async Task ExportAllTeachers()
     {
-        if (_school.Teachers.Count == 0) { _status.Text = "No timetables loaded."; return; }
+        if (_school.Teachers.Count == 0) { SetStatus("There are no timetables to export.", isError: true); return; }
         if (!TryGetExportSettings(out var firstWeek, out var weeks, out var free, out var lessons)) return;
 
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -595,9 +878,9 @@ public class MainWindow : Window
             await File.WriteAllTextAsync(Path.Combine(folder, $"{teacher.Name} timetable.ics"), ics, new UTF8Encoding(false));
         }
 
-        _status.Text = $"Saved {_school.Teachers.Count} calendar files to {folder}.";
+        SetStatus($"Saved {_school.Teachers.Count} calendar files to {folder}.");
     }
 
     private static DateTime NextMonday(DateTime from) =>
-        from.DayOfWeek == DayOfWeek.Monday ? from : from.AddDays(((int)DayOfWeek.Monday - (int)from.DayOfWeek + 7) % 7);
+        from.AddDays(((int)DayOfWeek.Monday - (int)from.DayOfWeek + 7) % 7);
 }

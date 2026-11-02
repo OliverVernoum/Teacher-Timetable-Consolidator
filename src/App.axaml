@@ -1,0 +1,243 @@
+<!--
+  App.axaml – the app's stylesheet.
+
+  This works a lot like CSS on a website. The C# code builds the controls and gives them
+  "classes" (e.g. a timetable cell gets the class "free"), and the styles below decide what
+  each class looks like. Keeping the look here means the C# code only has to say WHAT
+  something is, not HOW it should look.
+
+  Selector cheat sheet:
+    Button.badge              a Button with the class "badge"
+    Border.cell.free          a Border with BOTH classes "cell" and "free"
+    Border.cell > TextBlock   a TextBlock directly inside such a Border
+    Button:pointerover        a Button while the mouse is over it
+    /template/ ContentPresenter#PART_ContentPresenter
+                              the part INSIDE a Button that actually draws its background
+-->
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TimetableChecker.App"
+             RequestedThemeVariant="Default">
+
+  <!-- ===== Colours =====
+       Each colour has a Light and a Dark version. The app follows the computer's light/dark setting.
+       Controls use them with {DynamicResource Name}, so they swap automatically. -->
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PaperBrush" Color="#F5F7FA"/>       <!-- window background: whiteboard white -->
+          <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+          <SolidColorBrush x:Key="SidebarBrush" Color="#E7ECF4"/>
+          <SolidColorBrush x:Key="InkBrush" Color="#18233A"/>         <!-- main text: navy board-pen ink -->
+          <SolidColorBrush x:Key="InkMutedBrush" Color="#5A6780"/>
+          <SolidColorBrush x:Key="LineBrush" Color="#D7DEE9"/>
+          <SolidColorBrush x:Key="HoverBrush" Color="#DAE2EE"/>
+          <SolidColorBrush x:Key="PenBlueBrush" Color="#2C5BD6"/>     <!-- selection -->
+          <SolidColorBrush x:Key="FreeBrush" Color="#D4EFDF"/>        <!-- free periods -->
+          <SolidColorBrush x:Key="FreeInkBrush" Color="#0F5636"/>
+          <SolidColorBrush x:Key="LessonBrush" Color="#EAEEF4"/>      <!-- lessons -->
+          <SolidColorBrush x:Key="BreakBrush" Color="#F8E6B8"/>       <!-- breaks and lunch: mustard -->
+          <SolidColorBrush x:Key="BreakInkBrush" Color="#6B4800"/>
+          <SolidColorBrush x:Key="DangerBrush" Color="#B53030"/>      <!-- only for deleting things -->
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PaperBrush" Color="#141A26"/>
+          <SolidColorBrush x:Key="SurfaceBrush" Color="#1C2433"/>
+          <SolidColorBrush x:Key="SidebarBrush" Color="#0F141E"/>
+          <SolidColorBrush x:Key="InkBrush" Color="#E5EAF3"/>
+          <SolidColorBrush x:Key="InkMutedBrush" Color="#97A2B7"/>
+          <SolidColorBrush x:Key="LineBrush" Color="#2A3448"/>
+          <SolidColorBrush x:Key="HoverBrush" Color="#263046"/>
+          <SolidColorBrush x:Key="PenBlueBrush" Color="#4F7BEA"/>
+          <SolidColorBrush x:Key="FreeBrush" Color="#16402D"/>
+          <SolidColorBrush x:Key="FreeInkBrush" Color="#93E2B8"/>
+          <SolidColorBrush x:Key="LessonBrush" Color="#222B3C"/>
+          <SolidColorBrush x:Key="BreakBrush" Color="#3D3017"/>
+          <SolidColorBrush x:Key="BreakInkBrush" Color="#F0C565"/>
+          <SolidColorBrush x:Key="DangerBrush" Color="#FF7C7C"/>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <!-- The built-in "Fluent" look for buttons, text boxes etc., with our blue as its accent colour -->
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#2C5BD6"/>
+        <ColorPaletteResources x:Key="Dark" Accent="#5B84F0"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{DynamicResource PaperBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+    </Style>
+
+    <!-- ===== Text ===== -->
+    <Style Selector="TextBlock.h1">
+      <Setter Property="FontSize" Value="28"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <Style Selector="TextBlock.h2">
+      <Setter Property="FontSize" Value="19"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.h3">
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.small">
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+    </Style>
+
+    <!-- ===== Sidebar ===== -->
+    <Style Selector="Border.sidebar">
+      <Setter Property="Background" Value="{DynamicResource SidebarBrush}"/>
+    </Style>
+    <Style Selector="Button.nav, Button.quiet">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="Button.nav">
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="FontSize" Value="15"/>
+    </Style>
+    <Style Selector="Button.quiet">
+      <Setter Property="Padding" Value="12,6"/>
+      <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}"/>
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.quiet:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+    </Style>
+    <!-- The page you're on: a white tab that joins onto the page -->
+    <Style Selector="Button.nav.active /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PaperBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource PenBlueBrush}"/>
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- ===== Day buttons and the day ribbon ===== -->
+    <Style Selector="Button.chip, Button.segment">
+      <Setter Property="Background" Value="{DynamicResource LessonBrush}"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+    <Style Selector="Button.chip">
+      <Setter Property="Padding" Value="16,7"/>
+    </Style>
+    <Style Selector="Button.segment">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="VerticalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Margin" Value="2,0"/>
+    </Style>
+    <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+    </Style>
+    <!-- Comes after the hover style, so a selected button stays blue while you hover over it -->
+    <Style Selector="Button.chip.selected /template/ ContentPresenter#PART_ContentPresenter, Button.segment.selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource PenBlueBrush}"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Border.ribbonbreak">
+      <Setter Property="Background" Value="{DynamicResource BreakBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Margin" Value="2,0"/>
+    </Style>
+    <Style Selector="Border.ribbonbreak > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource BreakInkBrush}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <!-- ===== Free teachers: pill-shaped, like a staff name badge ===== -->
+    <Style Selector="Button.badge">
+      <Setter Property="Background" Value="{DynamicResource FreeBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource FreeInkBrush}"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="18,9"/>
+      <Setter Property="Margin" Value="0,0,8,8"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.badge:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource FreeBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource FreeInkBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource FreeInkBrush}"/>
+      <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+
+    <!-- ===== Timetable grid cells ===== -->
+    <Style Selector="Border.cell">
+      <Setter Property="Background" Value="{DynamicResource LessonBrush}"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="Margin" Value="2"/>
+    </Style>
+    <Style Selector="Border.cell > TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.cell.free">
+      <Setter Property="Background" Value="{DynamicResource FreeBrush}"/>
+    </Style>
+    <Style Selector="Border.cell.free > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource FreeInkBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Border.cell.break">
+      <Setter Property="Background" Value="{DynamicResource BreakBrush}"/>
+    </Style>
+    <Style Selector="Border.cell.break > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource BreakInkBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.cell.plain">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Border.cell.selected">
+      <Setter Property="BorderBrush" Value="{DynamicResource PenBlueBrush}"/>
+      <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+
+    <!-- ===== Everything else ===== -->
+    <Style Selector="Button.danger">
+      <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+    </Style>
+    <Style Selector="Border.listpane">
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="0,0,1,0"/>
+    </Style>
+    <Style Selector="Border.statusbar">
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+      <Setter Property="Padding" Value="28,9"/>
+    </Style>
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+  </Application.Styles>
+</Application>

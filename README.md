@@ -4,10 +4,10 @@ A desktop app for Windows and Mac. It loads every teacher's timetable and shows 
 
 ## Features
 
-- **Who's free?** Pick a day and period, or click **Free right now**, to list the free teachers. The app also lists who is teaching and what.
+- **Who's free:** pick a day and a period on the *day ribbon*, which draws your school day to scale, or click **Right now**. Free teachers appear as name badges; click one to open their timetable. The app also lists who is teaching and what.
 - **Teacher timetable:** see any teacher's week as a grid, with free periods in green.
 - **Add, rename, edit and remove teachers** inside the app. Changes are saved to the CSV files.
-- **School day settings:** choose when the day starts, the number of periods, the length of each period, and when breaks and lunches happen. Breaks show in the timetable, and "Free right now" knows when it's break time.
+- **School day settings:** choose when the day starts, the number of periods, the length of each period, and when breaks and lunches happen. Breaks show in the timetable, and **Right now** knows when it's break time.
 - **Calendar export (.ics):** export one teacher, or every teacher at once, as weekly repeating events. You choose the first week, how many weeks to repeat (e.g. a 13-week term), and whether to include free periods, lessons or both. Free periods are marked "available", so they don't block your calendar.
 
 ## Downloading and running
@@ -87,6 +87,7 @@ If you leave the version blank, the workflow just builds the zips, and you can d
 ## Project layout
 
 ```
+src/App.axaml          colours and styles (light and dark), like a CSS stylesheet
 src/School.cs          loading/saving timetables, finding free teachers
 src/CalendarExport.cs  .ics calendar file export
 src/MainWindow.cs      the window
