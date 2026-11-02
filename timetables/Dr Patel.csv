@@ -1,0 +1,6 @@
+Period,Start,End,Monday,Tuesday,Wednesday,Thursday,Friday
+P1,08:50,09:50,11C Science,,9A Science,11C Science,
+P2,09:50,10:50,,11C Science,10C Science,,9A Science
+P3,11:10,12:10,10C Science,9A Science,,10C Science,11C Science
+P4,12:10,13:10,9A Science,,11C Science,,10C Science
+P5,14:00,15:00,,10C Science,,9A Science,

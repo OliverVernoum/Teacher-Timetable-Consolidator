@@ -1,0 +1,6 @@
+Period,Start,End,Monday,Tuesday,Wednesday,Thursday,Friday
+P1,08:50,09:50,,9B Computing,,10D Computing,11D Computing
+P2,09:50,10:50,10D Computing,,11D Computing,9B Computing,
+P3,11:10,12:10,,11D Computing,9B Computing,,10D Computing
+P4,12:10,13:10,11D Computing,10D Computing,,9B Computing,
+P5,14:00,15:00,9B Computing,,10D Computing,,11D Computing
