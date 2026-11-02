@@ -28,7 +28,6 @@ public class MainWindow : Window
     // Editing a timetable
     private bool _editing;
     private readonly Dictionary<(string Day, string Period), TextBox> _lessonEditors = new();
-    private readonly List<(TextBox Start, TextBox End)> _timeEditors = new();
     private readonly Button _editButton = new() { Content = "Edit timetable" };
     private readonly Button _cancelEditButton = new() { Content = "Cancel", IsVisible = false };
     private readonly Button _renameButton = new() { Content = "Rename…" };
@@ -38,6 +37,7 @@ public class MainWindow : Window
     private static readonly IBrush FreeBrush = new SolidColorBrush(Color.Parse("#4CAF50"), 0.30);
     private static readonly IBrush LessonBrush = new SolidColorBrush(Color.Parse("#808080"), 0.12);
     private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.Parse("#2196F3"));
+    private static readonly IBrush BreakBrush = new SolidColorBrush(Color.Parse("#FF9800"), 0.18);
 
     public MainWindow()
     {
@@ -66,11 +66,15 @@ public class MainWindow : Window
         openButton.Click += async (_, _) => await ChooseFolder();
         var reloadButton = new Button { Content = "Reload" };
         reloadButton.Click += (_, _) => LoadFolder(_folderLabel.Tag as string);
+        var dayButton = new Button { Content = "School day settings…" };
+        ToolTip.SetTip(dayButton, "Number of periods, period lengths, breaks and lunches");
+        dayButton.Click += async (_, _) => await OpenSchoolDaySettings();
 
         var topBar = new DockPanel { Margin = new Thickness(16, 12), LastChildFill = true };
         var topButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         topButtons.Children.Add(openButton);
         topButtons.Children.Add(reloadButton);
+        topButtons.Children.Add(dayButton);
         DockPanel.SetDock(topButtons, Dock.Left);
         topBar.Children.Add(topButtons);
         _folderLabel.Margin = new Thickness(12, 0, 0, 0);
@@ -254,10 +258,14 @@ public class MainWindow : Window
 
     private void SelectCurrentPeriod()
     {
-        var slot = _school.SlotAt(DateTime.Now);
+        var now = DateTime.Now;
+        var slot = _school.SlotAt(now);
         if (slot is null)
         {
-            _freeHeading.Text = "No lesson is happening right now";
+            var breakNow = _school.BreakAt(now);
+            _freeHeading.Text = breakNow is not null
+                ? $"It's {breakNow.Name} until {breakNow.End:hh\\:mm} – everyone is free"
+                : "No lesson is happening right now";
             _freeList.ItemsSource = null;
             _busyList.ItemsSource = null;
             return;
@@ -302,7 +310,6 @@ public class MainWindow : Window
         _timetableGrid.RowDefinitions.Clear();
         _timetableGrid.ColumnDefinitions.Clear();
         _lessonEditors.Clear();
-        _timeEditors.Clear();
 
         var teacher = _teacherBox.SelectedItem as Teacher;
         if (teacher is null) _editing = false;
@@ -314,33 +321,28 @@ public class MainWindow : Window
         _gridHint.Text = teacher is null
             ? "No teachers yet – click “Add teacher…” to create one."
             : _editing
-                ? "Type the class in each box, or leave it empty for a free period. Period times are shared by every teacher. Click “Save changes” when done."
+                ? "Type the class in each box, or leave it empty for a free period, then click “Save changes”. To change period times, breaks or the number of periods, use “School day settings…”."
                 : "Green = free period. The blue outline is the period picked on the left.";
         if (teacher is null) return;
 
         _timetableGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-        foreach (var _ in _school.Days) _timetableGrid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(_editing ? 105 : 120)));
+        foreach (var _ in _school.Days) _timetableGrid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(120)));
         _timetableGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        foreach (var _ in _school.Periods) _timetableGrid.RowDefinitions.Add(new RowDefinition(new GridLength(52)));
 
         for (int d = 0; d < _school.Days.Count; d++)
             AddCell(0, d + 1, _school.Days[d], null, bold: true);
 
         var selectedDay = _dayBox.SelectedItem as string;
         var selectedPeriod = (_periodBox.SelectedItem as Period)?.Name;
+        int row = 0;
 
         for (int p = 0; p < _school.Periods.Count; p++)
         {
             var period = _school.Periods[p];
-            if (_editing)
-            {
-                AddTimeEditor(p + 1, period);
-            }
-            else
-            {
-                var label = period.HasTimes ? $"{period.Name}\n{period.Start:hh\\:mm}–{period.End:hh\\:mm}" : period.Name;
-                AddCell(p + 1, 0, label, null, bold: true);
-            }
+            row++;
+            _timetableGrid.RowDefinitions.Add(new RowDefinition(new GridLength(52)));
+            var label = period.HasTimes ? $"{period.Name}\n{period.Start:hh\\:mm}–{period.End:hh\\:mm}" : period.Name;
+            AddCell(row, 0, label, null, bold: true);
 
             for (int d = 0; d < _school.Days.Count; d++)
             {
@@ -349,35 +351,32 @@ public class MainWindow : Window
                 if (_editing)
                 {
                     var box = new TextBox { Text = lesson ?? "", Watermark = "Free", Margin = new Thickness(2), VerticalContentAlignment = VerticalAlignment.Center };
-                    Grid.SetRow(box, p + 1);
+                    Grid.SetRow(box, row);
                     Grid.SetColumn(box, d + 1);
                     _timetableGrid.Children.Add(box);
                     _lessonEditors[(day, period.Name)] = box;
                     continue;
                 }
-                var cell = AddCell(p + 1, d + 1, lesson ?? "Free", lesson is null ? FreeBrush : LessonBrush, bold: lesson is null);
+                var cell = AddCell(row, d + 1, lesson ?? "Free", lesson is null ? FreeBrush : LessonBrush, bold: lesson is null);
                 if (day == selectedDay && period.Name == selectedPeriod)
                 {
                     cell.BorderBrush = HighlightBrush;
                     cell.BorderThickness = new Thickness(2);
                 }
             }
-        }
-    }
 
-    private void AddTimeEditor(int row, Period period)
-    {
-        var start = new TextBox { Text = School.FormatTime(period.Start), Watermark = "09:00", Width = 64 };
-        var end = new TextBox { Text = School.FormatTime(period.End), Watermark = "10:00", Width = 64 };
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(2), VerticalAlignment = VerticalAlignment.Center };
-        panel.Children.Add(new TextBlock { Text = period.Name, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, MinWidth = 28 });
-        panel.Children.Add(start);
-        panel.Children.Add(new TextBlock { Text = "–", VerticalAlignment = VerticalAlignment.Center });
-        panel.Children.Add(end);
-        Grid.SetRow(panel, row);
-        Grid.SetColumn(panel, 0);
-        _timetableGrid.Children.Add(panel);
-        _timeEditors.Add((start, end));
+            // Breaks and lunches that come straight after this period get a thin row across the week
+            var nextStart = p + 1 < _school.Periods.Count ? _school.Periods[p + 1].Start : null;
+            foreach (var b in _school.Breaks.Where(b => period.End is { } end && b.Start >= end && (nextStart is null || b.End <= nextStart)))
+            {
+                row++;
+                _timetableGrid.RowDefinitions.Add(new RowDefinition(new GridLength(30)));
+                AddCell(row, 0, $"{b.Start:hh\\:mm}–{b.End:hh\\:mm}", null, bold: false).Opacity = 0.75;
+                var band = AddCell(row, 1, b.Name, BreakBrush, bold: true);
+                Grid.SetColumnSpan(band, Math.Max(1, _school.Days.Count));
+                ((TextBlock)band.Child!).HorizontalAlignment = HorizontalAlignment.Center;
+            }
+        }
     }
 
     private Border AddCell(int row, int col, string text, IBrush? background, bool bold)
@@ -475,34 +474,10 @@ public class MainWindow : Window
             return;
         }
 
-        // Check the times first so nothing is half-saved
-        var times = new List<(TimeSpan? Start, TimeSpan? End)>();
-        for (int i = 0; i < _timeEditors.Count; i++)
-        {
-            var (startBox, endBox) = _timeEditors[i];
-            var name = _school.Periods[i].Name;
-            var startText = (startBox.Text ?? "").Trim();
-            var endText = (endBox.Text ?? "").Trim();
-            var start = School.ParseTime(startText);
-            var end = School.ParseTime(endText);
-            if ((startText.Length > 0 && start is null) || (endText.Length > 0 && end is null))
-            {
-                _status.Text = $"{name}: times must look like 09:00.";
-                return;
-            }
-            if (start is not null && end is not null && end <= start)
-            {
-                _status.Text = $"{name}: the end time must be after the start time.";
-                return;
-            }
-            times.Add((start, end));
-        }
-
         try
         {
-            for (int i = 0; i < times.Count; i++) _school.SetPeriodTimes(i, times[i].Start, times[i].End);
             foreach (var ((day, period), box) in _lessonEditors) teacher.SetLesson(day, period, box.Text ?? "");
-            _school.SaveAll(); // times are stored in every teacher's file
+            _school.Save(teacher);
             _editing = false;
             _status.Text = $"Saved {teacher.Name}'s timetable.";
         }
@@ -511,11 +486,49 @@ public class MainWindow : Window
             _status.Text = $"Couldn't save: {ex.Message}";
         }
 
-        var periodIndex = _periodBox.SelectedIndex;
-        _periodBox.ItemsSource = _school.Periods.ToList();
-        _periodBox.SelectedIndex = periodIndex;
         RefreshFreeList();
         RefreshTimetable();
+    }
+
+    // ---------- School day settings ----------
+
+    private async Task OpenSchoolDaySettings()
+    {
+        if (_editing) { _status.Text = "Save or cancel your changes first."; return; }
+
+        var schedule = await new SchoolDayWindow(_school.Schedule).ShowAsync(this);
+        if (schedule is null) return;
+
+        int lost = _school.LessonsLostBy(schedule);
+        if (lost > 0)
+        {
+            var removed = string.Join(", ", _school.Periods.Skip(schedule.Periods.Count).Select(p => p.Name));
+            bool sure = await Dialogs.Confirm(this, "Remove periods?",
+                $"Going down to {schedule.Periods.Count} periods removes {removed} from every timetable. " +
+                $"{lost} lesson{(lost == 1 ? "" : "s")} in {(removed.Contains(',') ? "those periods" : "that period")} will be deleted.",
+                "Remove them");
+            if (!sure) return;
+        }
+
+        try
+        {
+            if (_school.Folder is null)
+            {
+                // Nothing loaded yet: start a timetables folder in Documents so the settings have somewhere to live
+                Directory.CreateDirectory(DocumentsFolder);
+                LoadFolder(DocumentsFolder);
+            }
+            var teacherName = (_teacherBox.SelectedItem as Teacher)?.Name;
+            var periodIndex = _periodBox.SelectedIndex;
+            _school.ApplySchedule(schedule);
+            LoadFolder(_school.Folder, teacherName);
+            _periodBox.SelectedIndex = Math.Min(Math.Max(periodIndex, 0), _school.Periods.Count - 1);
+            _status.Text = $"Saved the school day: {_school.Periods.Count} periods and {_school.Breaks.Count} break{(_school.Breaks.Count == 1 ? "" : "s")}. Every teacher's timetable has been updated.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = $"Couldn't save the school day settings: {ex.Message}";
+        }
     }
 
     // ---------- Calendar export ----------
