@@ -62,7 +62,14 @@ dotnet run --project src            # run it on this computer
 ./build-release.sh                  # build the Windows and Mac zips into ./publish
 ```
 
-Mac apps must be signed before they will run. `build-release.sh` signs them automatically when run on a Mac. To build on GitHub's own Macs, use the **Build apps** workflow: open **Actions → Build apps → Run workflow** and download the zips when it finishes. Pushing a tag such as `v1.0` also attaches them to a Release.
+Mac apps must be signed before they will run. `build-release.sh` signs them automatically when run on a Mac. The **Build apps** GitHub workflow builds everything on GitHub's own Macs.
+
+### Making a release
+
+- On GitHub, go to **Releases → Draft a new release**, type a new tag such as `v1.1`, and click **Publish release**. After about 5 minutes the Windows and Mac zips appear on the release.
+- Or go to **Actions → Build apps → Run workflow** and type a version such as `v1.1`. This creates the tag and the release for you.
+
+If you leave the version blank, the workflow just builds the zips, and you can download them from that run's page.
 
 ## Project layout
 
