@@ -1,9 +1,21 @@
 # Builds the Windows and Mac downloads on GitHub's own Mac computers (needed so the Mac app gets signed).
-# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0 to also attach the zips to a Release.
+#
+# Three ways to make a release:
+#   1. Releases → "Draft a new release" → type a tag like v1.0 → Publish. The zips are attached a few minutes later.
+#   2. Actions → Build apps → Run workflow → type a version like v1.0. The tag and release are created for you.
+#   3. Push a tag like v1.0.
+# Running it from Actions with the version left blank just builds the zips (download them from the run's page).
 name: Build apps
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.0 (leave blank to just build)"
+        required: false
+        default: ""
+  release:
+    types: [published]
   push:
     tags: ["v*"]
 
@@ -13,6 +25,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -23,7 +37,26 @@ jobs:
         with:
           name: TimetableChecker
           path: publish/*.zip
-      - if: startsWith(github.ref, 'refs/tags/')
+      - if: env.TAG != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Timetable Checker ${{ env.TAG }}
           files: publish/*.zip
+          # Keep any notes written on the release page, and add the download instructions underneath
+          append_body: ${{ github.event_name == 'release' }}
+          body: |
+            ## Download
+
+            | Computer | File |
+            |---|---|
+            | Windows | **TimetableChecker-Windows.zip** – unzip, double-click `TimetableChecker.exe` (if SmartScreen warns: *More info → Run anyway*) |
+            | Mac with M1/M2/M3/M4 chip | **TimetableChecker-Mac-AppleSilicon.zip** |
+            | Older Intel Mac | **TimetableChecker-Mac-Intel.zip** |
+
+            **Mac:** unzip, then right-click **Timetable Checker.app → Open → Open** the first time.
+            If macOS says the app is damaged, run `xattr -cr "Timetable Checker.app"` in Terminal.
+
+            Example timetables are included. Use **Open timetables folder…** or **Add teacher…** to get started.
+            See the [README](https://github.com/${{ github.repository }}#readme) for the timetable file format and calendar export.
