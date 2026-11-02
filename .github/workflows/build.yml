@@ -1,0 +1,29 @@
+# Builds the Windows and Mac downloads on GitHub's own Mac computers (needed so the Mac app gets signed).
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0 to also attach the zips to a Release.
+name: Build apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: ./build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TimetableChecker
+          path: publish/*.zip
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/*.zip
