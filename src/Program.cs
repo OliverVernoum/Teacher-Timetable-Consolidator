@@ -1,12 +1,12 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Styling;
-using Avalonia.Themes.Fluent;
+using Avalonia.Markup.Xaml;
 
 namespace TimetableChecker;
 
 public static class Program
 {
+    // The app starts here. Avalonia picks the right windowing system for Windows/Mac/Linux.
     [STAThread]
     public static void Main(string[] args) =>
         AppBuilder.Configure<App>()
@@ -15,13 +15,13 @@ public static class Program
             .StartWithClassicDesktopLifetime(args);
 }
 
-public class App : Application
+/// <summary>
+/// The application object. Its look (colours and styles) is in App.axaml;
+/// "partial" means the rest of this class is generated from that file when the app is built.
+/// </summary>
+public partial class App : Application
 {
-    public override void Initialize()
-    {
-        Styles.Add(new FluentTheme());
-        RequestedThemeVariant = ThemeVariant.Default; // follows the computer's light/dark setting
-    }
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
     {

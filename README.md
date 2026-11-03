@@ -4,10 +4,10 @@ A desktop app for Windows and Mac. It loads every teacher's timetable and shows 
 
 ## Features
 
-- **Who's free?** Pick a day and period, or click **Free right now**, to list the free teachers. The app also lists who is teaching and what.
+- **Who's free:** pick a day and a period on the *day ribbon*, which draws your school day to scale, or click **Right now**. Free teachers appear as name badges; click one to open their timetable. The app also lists who is teaching and what.
 - **Teacher timetable:** see any teacher's week as a grid, with free periods in green.
 - **Add, rename, edit and remove teachers** inside the app. Changes are saved to the CSV files.
-- **Change period times** (e.g. P1 08:50–09:50) while editing. All teachers share the same times.
+- **School day settings:** choose when the day starts, the number of periods, the length of each period, and when breaks and lunches happen. Breaks show in the timetable, and **Right now** knows when it's break time.
 - **Calendar export (.ics):** export one teacher, or every teacher at once, as weekly repeating events. You choose the first week, how many weeks to repeat (e.g. a 13-week term), and whether to include free periods, lessons or both. Free periods are marked "available", so they don't block your calendar.
 
 ## Downloading and running
@@ -40,10 +40,23 @@ P3,11:10,12:10,11B Maths,10A Maths,,9C Maths,Free
 ```
 
 - An **empty cell**, or the word **Free**, means a free period.
-- `Start` and `End` are needed for **Free right now** and for calendar export.
+- `Start` and `End` are filled in automatically from **School day settings**. If you write CSV files by hand without a `school-day.json`, the times in the files are used, and gaps between periods are shown as breaks.
 - Day columns can be any days of the week (e.g. add `Saturday`). Short names like `Mon` also work.
 
 The app opens the last folder you used. Otherwise it uses a `timetables` folder next to the app, or `Documents/Timetable Checker/timetables`. Use **Open timetables folder…** to choose another folder, e.g. a shared drive.
+
+## School day settings
+
+Click **School day settings…** at the top of the window to change the shape of the day for the whole school:
+
+- **School day starts at:** the time the first period begins, e.g. `08:50`.
+- **Number of periods:** from 1 to 15.
+- **Period length:** set one length and click **Make every period this long**, or give individual periods a different length (e.g. a 70-minute P3). You can also rename periods, e.g. `Period 1` or `Reg`.
+- **Breaks and lunches:** add as many as you like. Each one has a name, the period it comes after, and a length in minutes.
+
+As you type, the preview on the right shows every period's and break's start and end time. Click **Save** to update every teacher's timetable. Lessons keep their position: whatever was in the 3rd period is still in the 3rd period, even if it's been renamed or moved to a new time. If you reduce the number of periods, the app warns you how many lessons will be deleted before it removes them.
+
+The settings are saved as `school-day.json` in the timetables folder, so everyone using a shared folder sees the same school day.
 
 ## Adding to Apple Calendar
 
@@ -74,9 +87,12 @@ If you leave the version blank, the workflow just builds the zips, and you can d
 ## Project layout
 
 ```
+src/App.axaml          colours and styles (light and dark), like a CSS stylesheet
 src/School.cs          loading/saving timetables, finding free teachers
 src/CalendarExport.cs  .ics calendar file export
 src/MainWindow.cs      the window
+src/DaySchedule.cs     period lengths, breaks and lunches (school-day.json)
+src/SchoolDayWindow.cs the School day settings window
 src/Dialogs.cs         pop-up "type a name" / "are you sure?" boxes
 timetables/            example timetables
 ```

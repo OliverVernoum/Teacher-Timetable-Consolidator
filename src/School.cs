@@ -37,6 +37,8 @@ public class Teacher
 
     public bool IsFree(string day, string period) => LessonAt(day, period) is null;
 
+    public void ClearLessons() => _lessons.Clear();
+
     public override string ToString() => Name;
 }
 
@@ -45,6 +47,10 @@ public class School
 {
     public List<string> Days { get; } = new();
     public List<Period> Periods { get; } = new();
+    public List<BreakSlot> Breaks { get; } = new();
+
+    /// <summary>The shape of the school day (period lengths, breaks). Edited in "School day settings".</summary>
+    public DaySchedule Schedule { get; private set; } = DaySchedule.Default();
     public List<Teacher> Teachers { get; } = new();
     public List<string> Warnings { get; } = new();
 
@@ -53,14 +59,6 @@ public class School
 
     /// <summary>Used when a new teacher is added to an empty folder.</summary>
     public static readonly string[] DefaultDays = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
-    public static readonly Period[] DefaultPeriods =
-    {
-        new("P1", new TimeSpan(8, 50, 0), new TimeSpan(9, 50, 0)),
-        new("P2", new TimeSpan(9, 50, 0), new TimeSpan(10, 50, 0)),
-        new("P3", new TimeSpan(11, 10, 0), new TimeSpan(12, 10, 0)),
-        new("P4", new TimeSpan(12, 10, 0), new TimeSpan(13, 10, 0)),
-        new("P5", new TimeSpan(14, 0, 0), new TimeSpan(15, 0, 0)),
-    };
 
     private static readonly string[] FixedColumns = { "period", "start", "end" };
 
@@ -86,7 +84,94 @@ public class School
             }
         }
 
+        school.LoadSchedule();
         return school;
+    }
+
+    /// <summary>
+    /// Uses school-day.json for the period times and breaks if it exists.
+    /// Otherwise keeps the times from the CSV files and treats gaps between periods as breaks.
+    /// </summary>
+    private void LoadSchedule()
+    {
+        DaySchedule? saved = null;
+        try
+        {
+            saved = DaySchedule.Load(Folder!);
+            var problem = saved?.Validate();
+            if (problem is not null)
+            {
+                Warnings.Add($"{DaySchedule.FileName}: {problem}");
+                saved = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Warnings.Add($"{DaySchedule.FileName}: {ex.Message}");
+        }
+
+        if (saved is not null)
+        {
+            var (periods, breaks) = saved.Build();
+            var unknown = Periods.Where(p => !periods.Any(n => n.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase))).Select(p => p.Name).ToList();
+            if (unknown.Count > 0)
+                Warnings.Add($"These periods are in the CSV files but not in {DaySchedule.FileName}, so they are hidden: {string.Join(", ", unknown)}");
+            Schedule = saved;
+            Periods.Clear();
+            Periods.AddRange(periods);
+            Breaks.Clear();
+            Breaks.AddRange(breaks);
+            return;
+        }
+
+        if (Periods.Count == 0) return; // empty folder: the default day is used when the first teacher is added
+        Schedule = DaySchedule.Infer(Periods);
+        Breaks.Clear();
+        for (int i = 0; i + 1 < Periods.Count; i++)
+        {
+            if (Periods[i].End is { } end && Periods[i + 1].Start is { } next && next > end)
+                Breaks.Add(new BreakSlot(next - end >= TimeSpan.FromMinutes(30) ? "Lunch" : "Break", end, next));
+        }
+    }
+
+    /// <summary>
+    /// How many lessons would be deleted by switching to <paramref name="schedule"/>
+    /// (lessons in periods that no longer exist when the number of periods goes down).
+    /// </summary>
+    public int LessonsLostBy(DaySchedule schedule) =>
+        Teachers.Sum(t => Periods.Skip(schedule.Periods.Count)
+            .Sum(p => Days.Count(d => t.LessonAt(d, p.Name) is not null)));
+
+    /// <summary>
+    /// Switches to a new school day. Lessons stay in the same position (the 3rd period stays the 3rd period),
+    /// even if periods are renamed. Saves school-day.json and every teacher's CSV file.
+    /// </summary>
+    public void ApplySchedule(DaySchedule schedule)
+    {
+        var (newPeriods, newBreaks) = schedule.Build();
+        var oldPeriods = Periods.ToList();
+        if (Days.Count == 0) Days.AddRange(DefaultDays);
+
+        foreach (var teacher in Teachers)
+        {
+            var lessons = Days.ToDictionary(d => d, d => oldPeriods.Select(p => teacher.LessonAt(d, p.Name) ?? "").ToList());
+            teacher.ClearLessons();
+            foreach (var day in Days)
+                for (int i = 0; i < newPeriods.Count && i < oldPeriods.Count; i++)
+                    teacher.SetLesson(day, newPeriods[i].Name, lessons[day][i]);
+        }
+
+        Schedule = schedule.Clone();
+        Periods.Clear();
+        Periods.AddRange(newPeriods);
+        Breaks.Clear();
+        Breaks.AddRange(newBreaks);
+
+        if (Folder is not null)
+        {
+            Schedule.Save(Folder);
+            SaveAll();
+        }
     }
 
     private void LoadTeacher(string file)
@@ -155,7 +240,7 @@ public class School
         Folder ??= folder;
         Directory.CreateDirectory(Folder);
         if (Days.Count == 0) Days.AddRange(DefaultDays);
-        if (Periods.Count == 0) Periods.AddRange(DefaultPeriods);
+        if (Periods.Count == 0) ApplySchedule(Schedule);
 
         var teacher = new Teacher(name, Path.Combine(Folder, name + ".csv"));
         Teachers.Add(teacher);
@@ -181,12 +266,6 @@ public class School
     {
         if (File.Exists(teacher.FilePath)) File.Delete(teacher.FilePath);
         Teachers.Remove(teacher);
-    }
-
-    /// <summary>Changes a period's start/end time (shared by every teacher) and saves all files.</summary>
-    public void SetPeriodTimes(int index, TimeSpan? start, TimeSpan? end)
-    {
-        Periods[index] = Periods[index] with { Start = start, End = end };
     }
 
     public void SaveAll()
@@ -233,6 +312,13 @@ public class School
         if (day is null) return null;
         var period = Periods.FirstOrDefault(p => p.HasTimes && now.TimeOfDay >= p.Start && now.TimeOfDay < p.End);
         return period is null ? null : (day, period);
+    }
+
+    /// <summary>The break or lunch happening at <paramref name="now"/>, if any (on a school day).</summary>
+    public BreakSlot? BreakAt(DateTime now)
+    {
+        if (!Days.Any(d => ToDayOfWeek(d) == now.DayOfWeek)) return null;
+        return Breaks.FirstOrDefault(b => now.TimeOfDay >= b.Start && now.TimeOfDay < b.End);
     }
 
     /// <summary>Turns "Monday", "Mon" or "monday" into a DayOfWeek.</summary>
