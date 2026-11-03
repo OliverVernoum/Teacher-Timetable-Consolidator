@@ -4,11 +4,13 @@ A desktop app for Windows and Mac. It loads every teacher's timetable and shows 
 
 ## Features
 
-- **Who's free:** pick a day and a period on the *day ribbon*, which draws your school day to scale, or click **Right now**. Free teachers appear as name badges; click one to open their timetable. The app also lists who is teaching and what.
+- **Who's free:** pick a day and a period on the *day ribbon*, which draws your school day to scale, or click **Right now**. Free teachers appear as green name badges, with an **Email** link under each that opens a cover request in your email app. Teachers on non-contact time are listed separately in purple, and the app also shows who is teaching and what.
 - **Teacher timetable:** see any teacher's week as a grid, with free periods in green.
 - **Add, rename, edit and remove teachers** inside the app. Changes are saved to the CSV files.
+- **Contact details:** save an email address and phone number for each teacher with **Contact details…** on the Timetables page.
+- **Free vs non-contact:** a free period means the teacher is available, for example to cover. Non-contact time (planning/PPA, management time) means they aren't teaching but the time is set aside. The two are shown in different colours.
 - **School day settings:** choose when the day starts, the number of periods, the length of each period, and when breaks and lunches happen. Breaks show in the timetable, and **Right now** knows when it's break time.
-- **Calendar export (.ics):** export one teacher, or every teacher at once, as weekly repeating events. You choose the first week, how many weeks to repeat (e.g. a 13-week term), and whether to include free periods, lessons or both. Free periods are marked "available", so they don't block your calendar.
+- **Calendar export (.ics):** export one teacher, or every teacher at once, as weekly repeating events. You choose the first week, how many weeks to repeat (e.g. a 13-week term), and whether to include free periods, non-contact time, lessons, or any mix of them. Free periods are marked "available", so they don't block your calendar.
 
 ## Downloading and running
 
@@ -40,6 +42,7 @@ P3,11:10,12:10,11B Maths,10A Maths,,9C Maths,Free
 ```
 
 - An **empty cell**, or the word **Free**, means a free period.
+- **Non-contact**, **NC** or **PPA** means non-contact time. You can add a note, e.g. `Non-contact: HoD time` or `PPA: marking`.
 - `Start` and `End` are filled in automatically from **School day settings**. If you write CSV files by hand without a `school-day.json`, the times in the files are used, and gaps between periods are shown as breaks.
 - Day columns can be any days of the week (e.g. add `Saturday`). Short names like `Mon` also work.
 
@@ -57,6 +60,12 @@ Click **School day settings…** at the top of the window to change the shape of
 As you type, the preview on the right shows every period's and break's start and end time. Click **Save** to update every teacher's timetable. Lessons keep their position: whatever was in the 3rd period is still in the 3rd period, even if it's been renamed or moved to a new time. If you reduce the number of periods, the app warns you how many lessons will be deleted before it removes them.
 
 The settings are saved as `school-day.json` in the timetables folder, so everyone using a shared folder sees the same school day.
+
+## Contact details and email
+
+On the Timetables page, pick a teacher and click **Contact details…** to save their email address and phone number. On the Who's free page, the **Email** link under a teacher's name opens your email app with a message already written, e.g. "Would you be able to cover Monday P3 (11:10–12:10)?". If a teacher has no email saved yet, the link says **Add email** instead.
+
+Contact details are saved in `contacts.json` in the timetables folder. It's kept separate from the CSV files because every `.csv` in the folder is read as a timetable.
 
 ## Adding to Apple Calendar
 
@@ -93,6 +102,7 @@ src/CalendarExport.cs  .ics calendar file export
 src/MainWindow.cs      the window
 src/DaySchedule.cs     period lengths, breaks and lunches (school-day.json)
 src/SchoolDayWindow.cs the School day settings window
-src/Dialogs.cs         pop-up "type a name" / "are you sure?" boxes
+src/Contacts.cs        contact details (contacts.json) and email links
+src/Dialogs.cs         pop-up boxes: type a name, contact details, "are you sure?"
 timetables/            example timetables
 ```

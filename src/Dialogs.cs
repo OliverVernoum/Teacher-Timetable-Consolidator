@@ -34,6 +34,42 @@ public static class Dialogs
         return result;
     }
 
+    /// <summary>Asks for a teacher's email and phone number. Returns null if cancelled.</summary>
+    public static async Task<(string Email, string Phone)?> EditContact(Window owner, string teacherName, ContactInfo current)
+    {
+        var email = new TextBox { Text = current.Email, Watermark = "e.g. j.smith@school.org" };
+        var phone = new TextBox { Text = current.Phone, Watermark = "Optional, e.g. extension 214" };
+        var error = new TextBlock { Foreground = Brushes.IndianRed, TextWrapping = TextWrapping.Wrap };
+        (string, string)? result = null;
+
+        var dialog = MakeWindow($"Contact details for {teacherName}");
+        void Submit()
+        {
+            var message = Contacts.CheckEmail(email.Text ?? "");
+            if (message is not null) { error.Text = message; return; }
+            result = ((email.Text ?? "").Trim(), (phone.Text ?? "").Trim());
+            dialog.Close();
+        }
+
+        var fields = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock { Text = "Email" }, email,
+                new TextBlock { Text = "Phone", Margin = new Thickness(0, 6, 0, 0) }, phone,
+            },
+        };
+        email.KeyDown += (_, e) => { if (e.Key == Key.Enter) Submit(); };
+        phone.KeyDown += (_, e) => { if (e.Key == Key.Enter) Submit(); };
+        dialog.Content = Layout($"How can {teacherName} be contacted? Leave a box empty to remove it.", fields, error,
+            ("Cancel", dialog.Close), ("Save", Submit));
+        dialog.Opened += (_, _) => email.Focus();
+
+        await dialog.ShowDialog(owner);
+        return result;
+    }
+
     public static async Task<bool> Confirm(Window owner, string title, string message, string yesText)
     {
         bool result = false;

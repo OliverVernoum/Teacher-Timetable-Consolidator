@@ -24,7 +24,7 @@
 
   <!-- Ship the sample timetables next to the executable -->
   <ItemGroup>
-    <None Include="../timetables/*.csv" Link="timetables/%(Filename)%(Extension)"
+    <None Include="../timetables/*.csv;../timetables/*.json" Link="timetables/%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
           ExcludeFromSingleFile="true" />
   </ItemGroup>

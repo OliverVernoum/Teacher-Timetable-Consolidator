@@ -11,11 +11,20 @@ public record Period(string Name, TimeSpan? Start, TimeSpan? End)
         HasTimes ? $"{Name}  ({Start:hh\\:mm}–{End:hh\\:mm})" : Name;
 }
 
+/// <summary>What a teacher is doing in one slot.</summary>
+public enum SlotKind
+{
+    Free,        // available – e.g. to cover a lesson
+    NonContact,  // not teaching, but the time is set aside (planning/PPA, management time)
+    Lesson,
+}
+
 /// <summary>A teacher and what they teach in each (day, period) slot.</summary>
 public class Teacher
 {
     public string Name { get; internal set; }
     public string FilePath { get; internal set; }
+    public ContactInfo Contact { get; internal set; } = new();
     private readonly Dictionary<(string Day, string Period), string> _lessons = new();
 
     public Teacher(string name, string filePath)
@@ -37,6 +46,24 @@ public class Teacher
 
     public bool IsFree(string day, string period) => LessonAt(day, period) is null;
 
+    public SlotKind KindAt(string day, string period) => LessonAt(day, period) switch
+    {
+        null => SlotKind.Free,
+        var text when IsNonContactText(text) => SlotKind.NonContact,
+        _ => SlotKind.Lesson,
+    };
+
+    /// <summary>
+    /// Non-contact time is written in the timetable as "Non-contact" (optionally with a note,
+    /// e.g. "Non-contact: HoD time"), "NC" or "PPA".
+    /// </summary>
+    public static bool IsNonContactText(string text)
+    {
+        var t = text.Trim().ToLowerInvariant();
+        return t.StartsWith("non-contact") || t.StartsWith("non contact") || t.StartsWith("noncontact")
+               || t == "nc" || t == "ppa" || t.StartsWith("ppa ") || t.StartsWith("ppa:");
+    }
+
     public void ClearLessons() => _lessons.Clear();
 
     public override string ToString() => Name;
@@ -53,6 +80,10 @@ public class School
     public DaySchedule Schedule { get; private set; } = DaySchedule.Default();
     public List<Teacher> Teachers { get; } = new();
     public List<string> Warnings { get; } = new();
+
+    /// <summary>Everyone's contact details from contacts.json, keyed by teacher name.</summary>
+    private Dictionary<string, ContactInfo> _contacts = new(StringComparer.OrdinalIgnoreCase);
+    private bool _contactsUnreadable; // if contacts.json is damaged, don't overwrite it and lose everyone's details
 
     /// <summary>The folder the CSV files live in (null if nothing is loaded).</summary>
     public string? Folder { get; private set; }
@@ -85,7 +116,43 @@ public class School
         }
 
         school.LoadSchedule();
+        school.LoadContacts();
         return school;
+    }
+
+    private void LoadContacts()
+    {
+        try
+        {
+            _contacts = Contacts.Load(Folder!);
+        }
+        catch (Exception ex)
+        {
+            _contactsUnreadable = true;
+            Warnings.Add($"{Contacts.FileName} couldn't be read, so contact details can't be changed until it's fixed: {ex.Message}");
+        }
+
+        foreach (var teacher in Teachers)
+        {
+            if (!_contacts.TryGetValue(teacher.Name, out var contact))
+                _contacts[teacher.Name] = contact = new ContactInfo();
+            teacher.Contact = contact; // the teacher and the dictionary share the same object
+        }
+    }
+
+    /// <summary>Changes a teacher's contact details and saves contacts.json.</summary>
+    public void SetContact(Teacher teacher, string email, string phone)
+    {
+        teacher.Contact.Email = email.Trim();
+        teacher.Contact.Phone = phone.Trim();
+        _contacts[teacher.Name] = teacher.Contact;
+        SaveContacts();
+    }
+
+    private void SaveContacts()
+    {
+        if (_contactsUnreadable) throw new InvalidOperationException($"{Contacts.FileName} is damaged. Fix or delete it, then click Reload.");
+        if (Folder is not null) Contacts.Save(Folder, _contacts);
     }
 
     /// <summary>
@@ -243,6 +310,8 @@ public class School
         if (Periods.Count == 0) ApplySchedule(Schedule);
 
         var teacher = new Teacher(name, Path.Combine(Folder, name + ".csv"));
+        if (_contacts.TryGetValue(name, out var contact)) teacher.Contact = contact; // details kept from before
+        else _contacts[name] = teacher.Contact;
         Teachers.Add(teacher);
         Teachers.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         Save(teacher);
@@ -255,9 +324,12 @@ public class School
         var newPath = Path.Combine(Path.GetDirectoryName(teacher.FilePath)!, newName + ".csv");
         if (File.Exists(teacher.FilePath) && !string.Equals(teacher.FilePath, newPath, StringComparison.Ordinal))
             File.Move(teacher.FilePath, newPath);
+        _contacts.Remove(teacher.Name);
         teacher.Name = newName;
         teacher.FilePath = newPath;
+        _contacts[newName] = teacher.Contact;
         Save(teacher);
+        if (!teacher.Contact.IsEmpty) SaveContacts();
         Teachers.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -266,6 +338,7 @@ public class School
     {
         if (File.Exists(teacher.FilePath)) File.Delete(teacher.FilePath);
         Teachers.Remove(teacher);
+        if (_contacts.Remove(teacher.Name) && !teacher.Contact.IsEmpty) SaveContacts();
     }
 
     public void SaveAll()
@@ -302,8 +375,12 @@ public class School
     public IEnumerable<Teacher> FreeTeachers(string day, string period) =>
         Teachers.Where(t => t.IsFree(day, period));
 
+    public IEnumerable<Teacher> NonContactTeachers(string day, string period) =>
+        Teachers.Where(t => t.KindAt(day, period) == SlotKind.NonContact);
+
+    /// <summary>Teachers who are teaching a lesson (not free, not non-contact).</summary>
     public IEnumerable<Teacher> BusyTeachers(string day, string period) =>
-        Teachers.Where(t => !t.IsFree(day, period));
+        Teachers.Where(t => t.KindAt(day, period) == SlotKind.Lesson);
 
     /// <summary>Finds the day column and period happening at <paramref name="now"/>, if any.</summary>
     public (string Day, Period Period)? SlotAt(DateTime now)

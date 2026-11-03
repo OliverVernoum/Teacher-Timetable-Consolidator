@@ -37,6 +37,8 @@
           <SolidColorBrush x:Key="FreeBrush" Color="#D4EFDF"/>        <!-- free periods -->
           <SolidColorBrush x:Key="FreeInkBrush" Color="#0F5636"/>
           <SolidColorBrush x:Key="LessonBrush" Color="#EAEEF4"/>      <!-- lessons -->
+          <SolidColorBrush x:Key="NonContactBrush" Color="#E6E1F8"/>  <!-- non-contact time: lilac -->
+          <SolidColorBrush x:Key="NonContactInkBrush" Color="#46368F"/>
           <SolidColorBrush x:Key="BreakBrush" Color="#F8E6B8"/>       <!-- breaks and lunch: mustard -->
           <SolidColorBrush x:Key="BreakInkBrush" Color="#6B4800"/>
           <SolidColorBrush x:Key="DangerBrush" Color="#B53030"/>      <!-- only for deleting things -->
@@ -53,6 +55,8 @@
           <SolidColorBrush x:Key="FreeBrush" Color="#16402D"/>
           <SolidColorBrush x:Key="FreeInkBrush" Color="#93E2B8"/>
           <SolidColorBrush x:Key="LessonBrush" Color="#222B3C"/>
+          <SolidColorBrush x:Key="NonContactBrush" Color="#2E2850"/>
+          <SolidColorBrush x:Key="NonContactInkBrush" Color="#C9C0FF"/>
           <SolidColorBrush x:Key="BreakBrush" Color="#3D3017"/>
           <SolidColorBrush x:Key="BreakInkBrush" Color="#F0C565"/>
           <SolidColorBrush x:Key="DangerBrush" Color="#FF7C7C"/>
@@ -175,7 +179,6 @@
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="CornerRadius" Value="20"/>
       <Setter Property="Padding" Value="18,9"/>
-      <Setter Property="Margin" Value="0,0,8,8"/>
       <Setter Property="FontSize" Value="15"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
@@ -184,6 +187,31 @@
       <Setter Property="Foreground" Value="{DynamicResource FreeInkBrush}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource FreeInkBrush}"/>
       <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+
+    <!-- Non-contact teachers: same badge shape, lilac instead of green -->
+    <Style Selector="Button.badge.noncontact">
+      <Setter Property="Background" Value="{DynamicResource NonContactBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource NonContactInkBrush}"/>
+    </Style>
+    <Style Selector="Button.badge.noncontact:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NonContactBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource NonContactInkBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource NonContactInkBrush}"/>
+    </Style>
+
+    <!-- A button that looks like a text link (e.g. "Email" under a badge) -->
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource PenBlueBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
     </Style>
 
     <!-- ===== Timetable grid cells ===== -->
@@ -202,6 +230,13 @@
     </Style>
     <Style Selector="Border.cell.free > TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource FreeInkBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Border.cell.noncontact">
+      <Setter Property="Background" Value="{DynamicResource NonContactBrush}"/>
+    </Style>
+    <Style Selector="Border.cell.noncontact > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource NonContactInkBrush}"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style Selector="Border.cell.break">

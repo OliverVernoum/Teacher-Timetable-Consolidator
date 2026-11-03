@@ -1,6 +1,6 @@
 Period,Start,End,Monday,Tuesday,Wednesday,Thursday,Friday
 P1,08:50,09:50,10A Maths,,11B Maths,10A Maths,
-P2,09:50,10:50,,9C Maths,9C Maths,,11B Maths
+P2,09:50,10:50,Non-contact,9C Maths,9C Maths,,11B Maths
 P3,11:10,12:10,11B Maths,10A Maths,,9C Maths,Free
 P4,12:10,13:10,9C Maths,,10A Maths,11B Maths,10A Maths
-P5,14:00,15:00,,11B Maths,Free,,9C Maths
+P5,14:00,15:00,,11B Maths,PPA,,9C Maths
