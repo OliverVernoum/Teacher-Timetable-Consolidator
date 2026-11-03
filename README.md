@@ -8,6 +8,7 @@ A desktop app for Windows and Mac. It loads every teacher's timetable and shows 
 - **Teacher timetable:** see any teacher's week as a grid, with free periods in green.
 - **Add, rename, edit and remove teachers** inside the app. Changes are saved to the CSV files.
 - **Contact details:** save an email address and phone number for each teacher with **Contact details…** on the Timetables page.
+- **Compare two teachers:** pick two teachers to see every slot in the week when both are free, for example to arrange a meeting or an observation. Shown as a list and as a week grid; you can choose whether non-contact time counts as free.
 - **Free vs non-contact:** a free period means the teacher is available, for example to cover. Non-contact time (planning/PPA, management time) means they aren't teaching but the time is set aside. The two are shown in different colours.
 - **School day settings:** choose when the day starts, the number of periods, the length of each period, and when breaks and lunches happen. Breaks show in the timetable, and **Right now** knows when it's break time.
 - **Calendar export (.ics):** export one teacher, or every teacher at once, as weekly repeating events. You choose the first week, how many weeks to repeat (e.g. a 13-week term), and whether to include free periods, non-contact time, lessons, or any mix of them. Free periods are marked "available", so they don't block your calendar.
@@ -66,6 +67,10 @@ The settings are saved as `school-day.json` in the timetables folder, so everyon
 On the Timetables page, pick a teacher and click **Contact details…** to save their email address and phone number. On the Who's free page, the **Email** link under a teacher's name opens your email app with a message already written, e.g. "Would you be able to cover Monday P3 (11:10–12:10)?". If a teacher has no email saved yet, the link says **Add email** instead.
 
 Contact details are saved in `contacts.json` in the timetables folder. It's kept separate from the CSV files because every `.csv` in the folder is read as a timetable.
+
+## Comparing two teachers
+
+Open **Compare**, then choose a first and a second teacher. The page lists every slot where both are free, e.g. *Tuesday P1, 08:50–09:50*. Click one to see who else is free then. Below the list, a week grid shows the shared free slots in green. In every other cell, the top line is the first teacher's slot and the bottom line is the second's. Tick **Count non-contact time as free** to include non-contact periods as well.
 
 ## Adding to Apple Calendar
 

@@ -375,6 +375,24 @@ public class School
     public IEnumerable<Teacher> FreeTeachers(string day, string period) =>
         Teachers.Where(t => t.IsFree(day, period));
 
+    /// <summary>
+    /// Every slot in the week where both teachers are free – the "intersection" of their free periods.
+    /// If <paramref name="countNonContact"/> is true, non-contact time counts as free too.
+    /// </summary>
+    public List<(string Day, Period Period)> SharedFree(Teacher a, Teacher b, bool countNonContact)
+    {
+        bool Available(Teacher t, string day, Period p) =>
+            t.KindAt(day, p.Name) == SlotKind.Free || (countNonContact && t.KindAt(day, p.Name) == SlotKind.NonContact);
+
+        // A nested loop over every day and period, keeping the slots where BOTH are available (logical AND)
+        var shared = new List<(string, Period)>();
+        foreach (var day in Days)
+            foreach (var period in Periods)
+                if (Available(a, day, period) && Available(b, day, period))
+                    shared.Add((day, period));
+        return shared;
+    }
+
     public IEnumerable<Teacher> NonContactTeachers(string day, string period) =>
         Teachers.Where(t => t.KindAt(day, period) == SlotKind.NonContact);
 
