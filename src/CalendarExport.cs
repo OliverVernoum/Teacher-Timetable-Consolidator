@@ -9,7 +9,7 @@ namespace TimetableChecker;
 public static class CalendarExport
 {
     public static string Build(School school, Teacher teacher, DateTime firstWeek, int weeks,
-                               bool includeFree, bool includeLessons)
+                               bool includeFree, bool includeLessons, bool includeNonContact)
     {
         var sb = new StringBuilder();
         void Line(string text) => sb.Append(Fold(text)).Append("\r\n");
@@ -31,9 +31,11 @@ public static class CalendarExport
             foreach (var period in school.Periods.Where(p => p.HasTimes))
             {
                 var lesson = teacher.LessonAt(day, period.Name);
-                bool free = lesson is null;
+                var kind = teacher.KindAt(day, period.Name);
+                bool free = kind == SlotKind.Free;
                 if (free && !includeFree) continue;
-                if (!free && !includeLessons) continue;
+                if (kind == SlotKind.Lesson && !includeLessons) continue;
+                if (kind == SlotKind.NonContact && !includeNonContact) continue;
 
                 var start = date + period.Start!.Value;
                 var end = date + period.End!.Value;

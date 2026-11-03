@@ -1,0 +1,18 @@
+{
+  "Dr Patel": {
+    "email": "a.patel@example.com",
+    "phone": "Ext. 214"
+  },
+  "Mr Smith": {
+    "email": "j.smith@example.com",
+    "phone": ""
+  },
+  "Mr Wilson": {
+    "email": "d.wilson@example.com",
+    "phone": "Ext. 302"
+  },
+  "Mrs Jones": {
+    "email": "s.jones@example.com",
+    "phone": ""
+  }
+}

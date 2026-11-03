@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TimetableChecker</AssemblyName>
+    <Version>1.2.0</Version>
     <RootNamespace>TimetableChecker</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- One self-contained file per platform: no .NET install needed on the target computer -->
@@ -24,7 +25,7 @@
 
   <!-- Ship the sample timetables next to the executable -->
   <ItemGroup>
-    <None Include="../timetables/*.csv" Link="timetables/%(Filename)%(Extension)"
+    <None Include="../timetables/*.csv;../timetables/*.json" Link="timetables/%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
           ExcludeFromSingleFile="true" />
   </ItemGroup>
