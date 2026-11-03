@@ -46,6 +46,14 @@ public class MainWindow : Window
     // Who's free page
     private readonly StackPanel _dayButtons = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
     private readonly Grid _ribbon = new() { Height = 58 };
+    private readonly ScrollViewer _ribbonScroller = new()
+    {
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, // only scrolls if the window is too narrow for every label
+        VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+    };
+    private readonly List<double> _ribbonWeights = new();  // each piece's length in minutes
+    private readonly List<double> _ribbonMinimums = new(); // the narrowest each piece can be and still be readable
+    private const double MinPeriodWidth = 62, MinBreakWidth = 40;
     private readonly TextBlock _answer = new() { Classes = { "h2" }, TextWrapping = TextWrapping.Wrap };
     private readonly WrapPanel _freeBadges = new();
     private readonly TextBlock _nonContactHeading = new() { Classes = { "h3" }, Margin = new Thickness(0, 12, 0, 0) };
@@ -204,7 +212,9 @@ public class MainWindow : Window
         var page = new StackPanel { Spacing = 14, Margin = new Thickness(32, 28, 32, 28) };
         page.Children.Add(header);
         page.Children.Add(_dayButtons);
-        page.Children.Add(_ribbon);
+        _ribbonScroller.Content = _ribbon;
+        _ribbonScroller.SizeChanged += (_, _) => ApplyRibbonWidths(); // re-fit whenever the window is resized
+        page.Children.Add(_ribbonScroller);
         page.Children.Add(new Border { Height = 8 });
         page.Children.Add(_answer);
         page.Children.Add(_freeBadges);
@@ -384,13 +394,15 @@ public class MainWindow : Window
 
     /// <summary>
     /// The day ribbon: the school day drawn as a strip, where each period's width matches how long it is,
-    /// and breaks/lunches are the gaps in between. It uses a Grid whose columns have "star" widths:
-    /// a 60-minute period gets 60*, a 20-minute break gets 20*, so the space is shared out in proportion.
+    /// and breaks/lunches are the gaps in between. Very short periods (e.g. a 10-minute registration) are
+    /// kept wide enough to read – see RibbonLayout for how the widths are worked out.
     /// </summary>
     private void RefreshRibbon()
     {
         _ribbon.Children.Clear();
         _ribbon.ColumnDefinitions.Clear();
+        _ribbonWeights.Clear();
+        _ribbonMinimums.Clear();
 
         var nowSlot = _school.SlotAt(DateTime.Now);
         int column = 0;
@@ -400,7 +412,7 @@ public class MainWindow : Window
             Control piece;
             if (period is not null)
             {
-                _ribbon.ColumnDefinitions.Add(new ColumnDefinition(Minutes(period.Start, period.End), GridUnitType.Star));
+                AddRibbonColumn(Minutes(period.Start, period.End), MinPeriodWidth);
                 bool isNow = nowSlot is { } s && s.Period == period && s.Day == _day;
                 var segment = new Button
                 {
@@ -427,7 +439,7 @@ public class MainWindow : Window
             }
             else
             {
-                _ribbon.ColumnDefinitions.Add(new ColumnDefinition(Minutes(breakSlot!.Start, breakSlot.End), GridUnitType.Star));
+                AddRibbonColumn(Minutes(breakSlot!.Start, breakSlot.End), MinBreakWidth);
                 piece = new Border { Classes = { "ribbonbreak" }, Child = new TextBlock { Text = breakSlot.Name } };
                 ToolTip.SetTip(piece, breakSlot.ToString());
             }
@@ -435,6 +447,26 @@ public class MainWindow : Window
             Grid.SetColumn(piece, column++);
             _ribbon.Children.Add(piece);
         }
+
+        ApplyRibbonWidths();
+    }
+
+    private void AddRibbonColumn(double minutes, double minimumWidth)
+    {
+        _ribbon.ColumnDefinitions.Add(new ColumnDefinition(minimumWidth, GridUnitType.Pixel));
+        _ribbonWeights.Add(minutes);
+        _ribbonMinimums.Add(minimumWidth);
+    }
+
+    /// <summary>Sets each ribbon column's width to fit the space available right now.</summary>
+    private void ApplyRibbonWidths()
+    {
+        double available = _ribbonScroller.Bounds.Width;
+        if (available <= 0 || _ribbonWeights.Count != _ribbon.ColumnDefinitions.Count) return; // not on screen yet
+
+        var widths = RibbonLayout.FitWidths(_ribbonWeights, _ribbonMinimums, available);
+        for (int i = 0; i < widths.Length; i++)
+            _ribbon.ColumnDefinitions[i].Width = new GridLength(Math.Floor(widths[i]), GridUnitType.Pixel);
     }
 
     private static double Minutes(TimeSpan? start, TimeSpan? end) =>
